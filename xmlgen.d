@@ -31,10 +31,73 @@ ulong maxCommentLen = 100;
 ulong minTextLen = 10;
 ulong maxTextLen = 1000;
 
+bool syntactic = true;
+
 Random random;
 
-string genString(const ulong minLen, const ulong maxLen) @safe {
+void indent(Out)(Out output, const ulong indent) {
+	for(ulong i = 0; i < indent; ++i) {
+		output.put(' ');
+	}
+}
 
+immutable title = ["Azure Mage", "The Splintered Husband", "Touch of Angels",
+	 "The Slaves's Search", "The Girlfriend of the Sparks", 
+	 "Storms in the Spirits"];
+
+immutable authors = [ "Hans Aanrud", "Alexander Aaronsohn",
+	"Héctor Abad Faciolince", "Christopher Abani", "Sait Faik Abasıyanık",
+	"Christina Abbey", "Edward Abbey", "Lynn Abbey", "Edwin A. Abbott",
+	"Eleanor Hallowell Abbott", "George Frederick Abbott", "Jacob Abbott",
+	"John S. C. Abbott", "Mohammed ibn Hajj al-Abdari al-Fasi",
+	"Mohammed al-Abdari al-Hihi", "Abdelkrim al-Khattabi",
+	"Abd al-Qadir al-Fasi", "Kōbō Abe", "Peter Abelard", "Robert Abernathy",
+	"Leila Abouzeid", "Marc Abrahams", "Abu al-Abbas as-Sabti",
+	"Abu Imran al-Fasi", "Abu Muqri Mohammed al-Battiwi",
+	"Milton Abramowitz", "Mohammed Achaari", "Chinua Achebe",
+	"Said Achtouk", "André Aciman", "Forrest J. Ackerman", "Douglas Adams",
+	"Robert Adams", "Abd al-Wahhab Adarrak", "Mirza Adeeb",
+	"Halide Edip Adıvar"];
+
+void genBooks(Out)(Out output, const ulong depth) {
+	indent(output, depth);
+	output.put("<Books>\n");
+
+	immutable ulong len = uniform(minChilds, maxChilds, random);
+	for(ulong i = 0; i < len; ++i) {
+		genBook(output, depth+1);	
+	}
+
+	indent(output, depth);
+	output.put("</Books>\n");
+}
+
+void genBook(Out)(Out output, const ulong depth) {
+	indent(output, depth);
+	output.put("<Book>\n");
+
+	indent(output, depth);
+	output.put("<Author>");
+	ulong len = uniform(0, authors.length, random);
+	output.put(authors[len]);
+	output.put("<Author/>\n");
+
+	indent(output, depth);
+	output.put("<Title>");
+	len = uniform(0, title.length, random);
+	output.put(title[len]);
+	output.put("<Title/>\n");
+	indent(output, depth);
+	output.put("<Title>");
+	len = uniform(0, title.length, random);
+	output.put(title[len]);
+	output.put("<Title/>\n");
+
+	indent(output, depth);
+	output.put("<Book/>\n");
+}
+
+string genString(const ulong minLen, const ulong maxLen) @safe {
 	auto ret = appender!string();
 
 	immutable ulong len = uniform(minLen, maxLen, random);
@@ -43,6 +106,24 @@ string genString(const ulong minLen, const ulong maxLen) @safe {
 	}
 
 	return ret.data;
+}
+
+string genString(const ulong minLen, const ulong maxLen, const ulong ind) @safe {
+	auto ret = appender!string();
+
+	ulong len = uniform(minLen, maxLen, random);
+	indent(ret, ind);
+	for(ulong i = 0; i < len; ++i) {
+		if(i == 80 - ind) {
+			ret.put("\n");
+			indent(ret, ind);
+		}
+		ret.put(letters[uniform(0, letters.length, random)]);
+	}
+	ret.put("\n");
+
+	return ret.data;
+
 }
 
 auto printable = letters ~ digits ~ whitespace;
@@ -67,9 +148,7 @@ void genAttributes(Out)(Out output) {
 
 void genTag(Out)(Out output, ulong depth) {
 	immutable auto tag = genString(minTagLen, maxTagLen); 
-	for(ulong indent = 0; indent < depth; ++indent) {
-		output.put(' ');
-	}
+	indent(output, depth);
 	output.put("<");
 	output.put(tag);
 	output.put(' ');
@@ -91,9 +170,7 @@ void genTag(Out)(Out output, ulong depth) {
 		}
 	}
 
-	for(ulong indent = 0; indent < depth; ++indent) {
-		output.put(' ');
-	}
+	indent(output, depth);
 	output.put("</");
 	output.put(tag);
 	output.put(">\n");
@@ -120,7 +197,8 @@ void main(string[] args) {
 		"maxAttributesValue|n", &maxAttributeValue,
 		"commentRatio|o", &commentRatio,
 		"minCommentLen|p", &minCommentLen, 
-		"maxCommentLen|q", &maxCommentLen
+		"maxCommentLen|q", &maxCommentLen,
+		"new|t", &syntactic
 		);
 
 	if (getoptRslt.helpWanted) {
@@ -133,5 +211,11 @@ void main(string[] args) {
 	random = Random(seed);
 
 	auto f = File(outfile, "w");
-	genTag(f.lockingTextWriter(), 0u);	
+	if(syntactic) {
+		log("There");
+		//genTag(f.lockingTextWriter(), 0u);	
+	} else {
+		log("Here");
+		//genBooks(f.lockingTextWriter(), 0u);
+	}	
 }
