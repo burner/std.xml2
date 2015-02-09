@@ -1,5 +1,6 @@
 import std.getopt;
 
+import std.ascii : letters, digits, whitespace;
 import std.array;
 import std.random : Random, uniform;
 import std.experimental.logger;
@@ -27,10 +28,12 @@ double commentRatio = 0.001;
 ulong minCommentLen = 1;
 ulong maxCommentLen = 100;
 
+ulong minTextLen = 10;
+ulong maxTextLen = 1000;
+
 Random random;
 
 string genString(const ulong minLen, const ulong maxLen) @safe {
-	import std.ascii : letters;
 
 	auto ret = appender!string();
 
@@ -40,6 +43,12 @@ string genString(const ulong minLen, const ulong maxLen) @safe {
 	}
 
 	return ret.data;
+}
+
+auto printable = letters ~ digits ~ whitespace;
+
+string getText(Out)(Out output) {
+	immutable ulong len = uniform(minTextLen, maxTextLen, random);
 }
 
 void genAttributes(Out)(Out output) {
