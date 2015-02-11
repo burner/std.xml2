@@ -4,6 +4,8 @@ import std.ascii : letters, digits, whitespace;
 import std.array;
 import std.random : Random, uniform;
 import std.experimental.logger;
+import std.conv;
+import std.csv;
 
 uint seed = 1337;
 
@@ -31,8 +33,6 @@ ulong maxCommentLen = 100;
 ulong minTextLen = 10;
 ulong maxTextLen = 1000;
 
-bool syntactic = true;
-
 Random random;
 
 void indent(Out)(Out output, const ulong indent) {
@@ -46,16 +46,16 @@ immutable title = ["Azure Mage", "The Splintered Husband", "Touch of Angels",
 	 "Storms in the Spirits"];
 
 immutable authors = [ "Hans Aanrud", "Alexander Aaronsohn",
-	"Héctor Abad Faciolince", "Christopher Abani", "Sait Faik Abasıyanık",
+	"Hector Abad Faciolince", "Christopher Abani", "Sait Faik Abasıyanık",
 	"Christina Abbey", "Edward Abbey", "Lynn Abbey", "Edwin A. Abbott",
 	"Eleanor Hallowell Abbott", "George Frederick Abbott", "Jacob Abbott",
 	"John S. C. Abbott", "Mohammed ibn Hajj al-Abdari al-Fasi",
 	"Mohammed al-Abdari al-Hihi", "Abdelkrim al-Khattabi",
-	"Abd al-Qadir al-Fasi", "Kōbō Abe", "Peter Abelard", "Robert Abernathy",
+	"Abd al-Qadir al-Fasi", "Kobo Abe", "Peter Abelard", "Robert Abernathy",
 	"Leila Abouzeid", "Marc Abrahams", "Abu al-Abbas as-Sabti",
 	"Abu Imran al-Fasi", "Abu Muqri Mohammed al-Battiwi",
 	"Milton Abramowitz", "Mohammed Achaari", "Chinua Achebe",
-	"Said Achtouk", "André Aciman", "Forrest J. Ackerman", "Douglas Adams",
+	"Said Achtouk", "Andre Aciman", "Forrest J. Ackerman", "Douglas Adams",
 	"Robert Adams", "Abd al-Wahhab Adarrak", "Mirza Adeeb",
 	"Halide Edip Adıvar"];
 
@@ -76,25 +76,49 @@ void genBook(Out)(Out output, const ulong depth) {
 	indent(output, depth);
 	output.put("<Book>\n");
 
-	indent(output, depth);
+	indent(output, depth+1);
 	output.put("<Author>");
 	ulong len = uniform(0, authors.length, random);
 	output.put(authors[len]);
 	output.put("<Author/>\n");
 
-	indent(output, depth);
+	indent(output, depth+1);
 	output.put("<Title>");
 	len = uniform(0, title.length, random);
 	output.put(title[len]);
 	output.put("<Title/>\n");
-	indent(output, depth);
-	output.put("<Title>");
-	len = uniform(0, title.length, random);
-	output.put(title[len]);
-	output.put("<Title/>\n");
+	indent(output, depth+1);
+	output.put("<Text>");
+	output.put(genString(minTextLen, maxTextLen, depth+1));
+	indent(output, depth+1);
+	output.put("<Text/>\n");
 
 	indent(output, depth);
 	output.put("<Book/>\n");
+}
+
+void genAuthors(Out)(Out output, const ulong depth) {
+	ulong len = uniform(minChilds, maxChilds, random);
+	indent(output, depth);
+	output.put("<Authors>\n");
+	for(ulong it = 0; it < len; ++it) {
+		indent(output, depth+1);
+		output.put("<Author ");
+		output.put("name=\"");
+		ulong len2 = uniform(0, authors.length, random);
+		output.put(authors[len2]);
+		output.put("\">\n");
+		indent(output, depth+1);
+		output.put("<Brithyear>");
+		output.put(to!string(uniform(1500, 2000, random)));
+		output.put("<Brithyear/>\n");
+	
+		genBooks(output, depth+1);
+		output.put("<Author/>\n");
+	
+		indent(output, depth);
+	}
+	output.put("<Authros/>\n");
 }
 
 string genString(const ulong minLen, const ulong maxLen) @safe {
@@ -114,7 +138,7 @@ string genString(const ulong minLen, const ulong maxLen, const ulong ind) @safe 
 	ulong len = uniform(minLen, maxLen, random);
 	indent(ret, ind);
 	for(ulong i = 0; i < len; ++i) {
-		if(i == 80 - ind) {
+		if(i % (80 - ind) == 0) {
 			ret.put("\n");
 			indent(ret, ind);
 		}
@@ -176,8 +200,28 @@ void genTag(Out)(Out output, ulong depth) {
 	output.put(">\n");
 }
 
+struct Entry {
+	string lastname;
+	string firstname;
+	string company;
+	string address;
+	string county;
+	string city;
+	string state;
+	ulong zip;
+	string phoneWork;
+	string fax;
+	string mail;
+	string www;
+}
+
 void main(string[] args) {
-	import std.stdio : stdout, File;
+	import std.stdio : stdout, File, writeln;
+	import std.file : readText;
+	import std.array : appender;
+
+	uint syntactic = 0u;
+
 	string outfile = "outfile.xml";
 	auto getoptRslt = getopt(args, 
 		"seed|a", &seed,
@@ -198,7 +242,7 @@ void main(string[] args) {
 		"commentRatio|o", &commentRatio,
 		"minCommentLen|p", &minCommentLen, 
 		"maxCommentLen|q", &maxCommentLen,
-		"new|t", &syntactic
+		"type|t", &syntactic
 		);
 
 	if (getoptRslt.helpWanted) {
@@ -211,11 +255,14 @@ void main(string[] args) {
 	random = Random(seed);
 
 	auto f = File(outfile, "w");
-	if(syntactic) {
-		log("There");
+	if(syntactic == 0) {
 		//genTag(f.lockingTextWriter(), 0u);	
-	} else {
-		log("Here");
-		//genBooks(f.lockingTextWriter(), 0u);
+	} else if(syntactic == 1) {
+		genAuthors(f.lockingTextWriter(), 0u);
+	} else if(syntactic == 2) {
+		auto entries = appender!(Entry[])();
+		foreach(record; csvReader!(Entry)(readText("50000.csv"))) {
+			entries.put(record);
+		}
 	}	
 }
