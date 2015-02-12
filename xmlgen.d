@@ -33,6 +33,8 @@ ulong maxCommentLen = 100;
 ulong minTextLen = 10;
 ulong maxTextLen = 1000;
 
+double attributeTagRatio = 0.1;
+
 Random random;
 
 void indent(Out)(Out output, const ulong indent) {
@@ -95,6 +97,52 @@ void genBook(Out)(Out output, const ulong depth) {
 
 	indent(output, depth);
 	output.put("<Book/>\n");
+}
+
+void genPeople(Out)(Out output, Entry[] entries) {
+	import std.range : take;
+	import std.array : array;
+	import std.format : formattedWrite;
+
+	output.put("<Persons>\n");
+	enum members = [__traits(allMembers, Entry)];
+	enum numMembers = members.length - 1;
+	immutable ulong numTags = cast(ulong)(numMembers * attributeTagRatio + 0.5);
+	immutable ulong numAttributes = cast(ulong)(numMembers * (1 - attributeTagRatio));
+	log(numMembers, " ", numTags, " ", numAttributes);
+
+	for(ulong it = 0; it < maxChilds; ++it) {
+		ulong[] indices;
+		for(ulong jt = 0; jt < numMembers; ++jt) { 
+			indices ~= uniform(0, entries.length, random);
+		}
+		//log(indices);
+
+		indent(output, 1);
+		output.put("<Person ");
+
+		ulong indicesPtr = 0;
+		for(ulong jt = 0; jt < numAttributes; ++jt) {
+			output.formattedWrite("%s=\"%s\" ", members[jt], 
+				entries[indices[indicesPtr]].toString(members[jt])
+			);
+			indicesPtr++;
+		}
+		output.put(">\n");
+
+		for(ulong jt = 0; jt < numTags; ++jt) {
+			indent(output, 2);
+			output.formattedWrite("<%s>%s<%s/>\n", members[numAttributes + jt],
+				entries[indices[indicesPtr]].toString(members[numAttributes + jt]),
+				members[numAttributes + jt]
+			);
+			indicesPtr++;
+		}
+		indent(output, 1);
+		output.put("<Person/>\n");
+	}
+
+	output.put("<Persons/>\n");
 }
 
 void genAuthors(Out)(Out output, const ulong depth) {
@@ -213,6 +261,37 @@ struct Entry {
 	string fax;
 	string mail;
 	string www;
+
+	string toString(string member) {
+		switch(member) {
+			case "lastname":
+				return (this.lastname);
+			case "firstname":
+				return (this.firstname);
+			case "company":
+				return (this.company);
+			case "address":
+				return (this.address);
+			case "county":
+				return (this.county);
+			case "city":
+				return (this.city);
+			case "state":
+				return (this.state);
+			case "zip":
+				return (to!string(this.zip));
+			case "phoneWork":
+				return (this.phoneWork);
+			case "fax":
+				return (this.fax);
+			case "mail":
+				return (this.mail);
+			case "www":
+				return (this.www);
+			default:
+				throw new Exception("member name \"" ~ member ~ "\" not found");
+		}
+	}
 }
 
 void main(string[] args) {
@@ -242,7 +321,8 @@ void main(string[] args) {
 		"commentRatio|o", &commentRatio,
 		"minCommentLen|p", &minCommentLen, 
 		"maxCommentLen|q", &maxCommentLen,
-		"type|t", &syntactic
+		"type|t", &syntactic,
+		"ratio|u", &attributeTagRatio
 		);
 
 	if (getoptRslt.helpWanted) {
@@ -261,8 +341,12 @@ void main(string[] args) {
 		genAuthors(f.lockingTextWriter(), 0u);
 	} else if(syntactic == 2) {
 		auto entries = appender!(Entry[])();
+		entries.reserve(50000);
 		foreach(record; csvReader!(Entry)(readText("50000.csv"))) {
 			entries.put(record);
 		}
-	}	
+		genPeople(f.lockingTextWriter(), entries.data);
+	} else {
+		logf("Option type|t must be between 0 and 3 not %u", syntactic);
+	}
 }
