@@ -321,7 +321,7 @@ void main(string[] args) {
 		"commentRatio|o", &commentRatio,
 		"minCommentLen|p", &minCommentLen, 
 		"maxCommentLen|q", &maxCommentLen,
-		"type|t", &syntactic,
+		"type|t", "0, 1 or 2", &syntactic,
 		"ratio|u", &attributeTagRatio
 		);
 
