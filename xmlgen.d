@@ -299,7 +299,7 @@ void main(string[] args) {
 	import std.file : readText;
 	import std.array : appender;
 
-	uint syntactic = 0u;
+	uint syntactic = 1337u;
 
 	string outfile = "outfile.xml";
 	auto getoptRslt = getopt(args, 
