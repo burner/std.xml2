@@ -35,6 +35,8 @@ ulong maxTextLen = 1000;
 
 double attributeTagRatio = 0.1;
 
+LogLevel loglevel;
+
 Random random;
 
 void indent(Out)(Out output, const ulong indent) {
@@ -180,6 +182,35 @@ string genString(const ulong minLen, const ulong maxLen) @safe {
 	return ret.data;
 }
 
+private pure T unicodeTable(T)() @safe {
+    import std.range : chain, iota;
+    import std.algorithm : map, joiner;
+    import std.array : array;
+    import std.conv : to;
+
+    auto arr = chain(
+        iota(0x21, 0x7E).map!(a => to!T(cast(dchar)a)), 
+        iota(0xA1, 0x1EF).map!(a => to!T(cast(dchar)a)));
+
+    return to!T(arr.joiner.array);
+}
+
+string genUnicodeString(const ulong minLen, const ulong maxLen, const ulong ind) @safe {
+    enum dstring possibleChars = unicodeTable!dstring();
+
+    import std.conv : to;
+    auto app = appender!string();
+    app.reserve(maxLen);
+	indent(app, ind);
+    size_t numElems = uniform!("[]")(minLen, maxLen, random);
+    for(size_t i = 0; i < numElems; ++i) 
+    {
+        app.put(possibleChars[uniform(0, possibleChars.length, random)]);
+    }
+
+	return app.data;
+}
+
 string genString(const ulong minLen, const ulong maxLen, const ulong ind) @safe {
 	auto ret = appender!string();
 
@@ -195,7 +226,7 @@ string genString(const ulong minLen, const ulong maxLen, const ulong ind) @safe 
 	ret.put("\n");
 
 	return ret.data;
-
+	//return genUnicodeString(minLen, maxLen, ind);
 }
 
 auto printable = letters ~ digits ~ whitespace;
@@ -322,7 +353,8 @@ void main(string[] args) {
 		"minCommentLen|p", &minCommentLen, 
 		"maxCommentLen|q", &maxCommentLen,
 		"type|t", "0, 1 or 2", &syntactic,
-		"ratio|u", &attributeTagRatio
+		"ratio|u", &attributeTagRatio,
+		"loglevel|v", &loglevel
 		);
 
 	if (getoptRslt.helpWanted) {
@@ -332,11 +364,13 @@ void main(string[] args) {
 		return;
 	}
 
+	globalLogLevel = loglevel;
+
 	random = Random(seed);
 
 	auto f = File(outfile, "w");
 	if(syntactic == 0) {
-		//genTag(f.lockingTextWriter(), 0u);	
+		genTag(f.lockingTextWriter(), 0u);	
 	} else if(syntactic == 1) {
 		genAuthors(f.lockingTextWriter(), 0u);
 	} else if(syntactic == 2) {
