@@ -84,21 +84,21 @@ void genBook(Out)(Out output, const ulong depth) {
 	output.put("<Author>");
 	ulong len = uniform(0, authors.length, random);
 	output.put(authors[len]);
-	output.put("<Author/>\n");
+	output.put("</Author>\n");
 
 	indent(output, depth+1);
 	output.put("<Title>");
 	len = uniform(0, title.length, random);
 	output.put(title[len]);
-	output.put("<Title/>\n");
+	output.put("</Title>\n");
 	indent(output, depth+1);
 	output.put("<Text>");
 	output.put(genString(minTextLen, maxTextLen, depth+1));
 	indent(output, depth+1);
-	output.put("<Text/>\n");
+	output.put("</Text>\n");
 
 	indent(output, depth);
-	output.put("<Book/>\n");
+	output.put("</Book>\n");
 }
 
 void genPeople(Out)(Out output, Entry[] entries) {
@@ -134,17 +134,17 @@ void genPeople(Out)(Out output, Entry[] entries) {
 
 		for(ulong jt = 0; jt < numTags; ++jt) {
 			indent(output, 2);
-			output.formattedWrite("<%s>%s<%s/>\n", members[numAttributes + jt],
+			output.formattedWrite("<%s>%s</%s>\n", members[numAttributes + jt],
 				entries[indices[indicesPtr]].toString(members[numAttributes + jt]),
 				members[numAttributes + jt]
 			);
 			indicesPtr++;
 		}
 		indent(output, 1);
-		output.put("<Person/>\n");
+		output.put("</Person>\n");
 	}
 
-	output.put("<Persons/>\n");
+	output.put("</Persons>\n");
 }
 
 void genAuthors(Out)(Out output, const ulong depth) {
@@ -161,14 +161,14 @@ void genAuthors(Out)(Out output, const ulong depth) {
 		indent(output, depth+1);
 		output.put("<Brithyear>");
 		output.put(to!string(uniform(1500, 2000, random)));
-		output.put("<Brithyear/>\n");
+		output.put("</Brithyear>\n");
 	
 		genBooks(output, depth+1);
-		output.put("<Author/>\n");
+		output.put("</Author>\n");
 	
 		indent(output, depth);
 	}
-	output.put("<Authros/>\n");
+	output.put("</Authros>\n");
 }
 
 string genString(const ulong minLen, const ulong maxLen) @safe {
