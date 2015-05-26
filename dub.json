@@ -10,5 +10,6 @@
 	"sourcePaths": ["source"],
 	"dependencies": {
 		"kxml": ">=1.0.0"
-	}
+	},
+	"compiler" : "dmd"
 }
