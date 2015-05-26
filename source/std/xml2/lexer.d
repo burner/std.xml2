@@ -5,6 +5,10 @@ import std.xml2.testing;
 import std.array : empty;
 import std.typecons : Flag;
 
+version(unittest) {
+	import std.experimental.logger;
+}
+
 alias Attributes(Input) = Input[Input];
 
 alias TrackPosition = Flag!"TrackPosition";
@@ -53,6 +57,7 @@ enum NodeType {
 
 struct Node(Input) {
 	NodeType nodeType;
+	Input input;
 
 	Attributes!Input attributes;
 
@@ -69,13 +74,20 @@ struct Lexer(Input,
 
 	SourcePosition!trackPosition position;
 	Input input;
+	Node!Input ret;
+	bool buildNext;
 
 	this(Input input) {
 		this.input = input;
+		this.buildNext = true;
 	}
 
 	@property bool empty() {
 		return this.input.empty;
+	}
+
+	void popFront() {
+		this.buildNext = true;
 	}
 
 	private void popAndAdvance() {
@@ -83,11 +95,28 @@ struct Lexer(Input,
 		this.input.popFront();
 	}
 
-	bool testAndEatPrefix(Prefix)(Prefix prefix) {
+	private void popAndAdvance(const size_t cnt) {
+		for(size_t i = 0; i < cnt; ++i) {
+			this.popAndAdvance();
+		}	
+	}
+
+	import std.traits : isSomeChar, isSomeString;
+
+	bool testAndEatPrefix(Prefix)(Prefix prefix) if(isSomeChar!Prefix) {
+		if(this.input.front == prefix) {
+			this.popAndAdvance();
+			return true;
+		} else {
+			return false;
+		}
+	}
+
+	bool testAndEatPrefix(Prefix)(Prefix prefix) if(!isSomeChar!Prefix) {
 		while(!this.input.empty && !prefix.empty && 
 				this.input.front == prefix.front) 
 		{
-			popAndAdvance();
+			this.popAndAdvance();
 			prefix.popFront();
 		}
 	
@@ -135,20 +164,102 @@ struct Lexer(Input,
 		return NodeType.Unknown;
 	}
 
+	import std.range.primitives;
+
+	static if(hasSlicing!Input || isSomeString!Input) {
+		Input eatUntil(T)(const T until) {
+			import std.string : indexOf;
+			import std.xml2.misc: indexOf;
+			static if(isSomeString!Input) { // TODO: Fix overload resulotion
+				auto idx = this.input.indexOf(until);
+			} else {
+				auto idx = std.xml2.misc.indexOf(this.input,until);
+			}
+			//assert(idx != -1);
+			if(idx == -1) {
+				idx = this.input.length;
+			}
+
+			auto ret = this.input[0 .. idx];
+
+			static if(TrackPosition.yes) {
+				this.popAndAdvance(idx);
+			} else {
+				this.input = this.input[idx .. $];
+			}
+
+			return ret;
+		}
+	} else {
+		import std.array : appender, Appender;
+		auto eatUntil(T)(const T until) {
+			auto app = appender!(ElementType!(Input)[])();
+			while(this.input.empty && !this.testAndEatPrefix(until)) {
+				app.put(this.input.front);	
+				this.popAndAdvance();
+			}
+
+			return app.data;
+		}
+	}
+
 	@property Node!Input front() {
-		Node!Input ret;
-		this.frontImpl(&ret);
-		return ret;
+		if(this.buildNext) {
+			this.frontImpl(&this.ret);
+			this.buildNext = false;
+		}
+		return this.ret;
 	}
 
 	void frontImpl(Node!Input* node) {
 		this.eatWhitespace();
 
-		const NodeType type = getAndEatNodeType();
+		const NodeType nodeType = getAndEatNodeType();
 
 		import std.conv : emplace;
 
-		emplace(node, type);
+		emplace(node, nodeType);
+
+		final switch(nodeType) {
+			case NodeType.Unknown:
+				version(unittest) log("TODO: Error Handling");
+			case NodeType.StartTag: { 
+				node.input = this.eatUntil('>');
+				this.testAndEatPrefix('>');
+				break;
+			}
+			case NodeType.EndTag:
+				goto case NodeType.StartTag;
+			case NodeType.EmptyTag:
+				goto case NodeType.StartTag;
+			case NodeType.CData: { 
+				node.input = this.eatUntil("]]>");
+				this.testAndEatPrefix("]]>");
+				break;
+			}
+			case NodeType.Text: { 
+				node.input = this.eatUntil('<');
+				break;
+			}
+			case NodeType.AttributeList:
+				goto case NodeType.StartTag;
+			case NodeType.DocType:
+				goto case NodeType.StartTag;
+			case NodeType.Element:
+				goto case NodeType.StartTag;
+			case NodeType.Comment: { 
+				node.input = this.eatUntil("-->");
+				this.testAndEatPrefix("-->");
+				break;
+			}
+			case NodeType.Notation:
+				goto case NodeType.StartTag;
+			case NodeType.Prolog: { 
+				node.input = this.eatUntil("?>");
+				this.testAndEatPrefix("?>");
+				break;
+			}
+		}
 	}
 
 	private void eatWhitespace() {
@@ -185,28 +296,61 @@ unittest {
 		NodeType type;
 	}
 
-	const Prefix[11] prefixes = [
-		Prefix("<xml", NodeType.StartTag),
-		Prefix("</xml", NodeType.EmptyTag),
-		Prefix("<!ELEMENT", NodeType.Element),
-		Prefix("<!DOCTYPE", NodeType.DocType),
-		Prefix("<!NOTATION", NodeType.Notation),
-		Prefix("<![CDATA[", NodeType.CData),
-		Prefix("<!--", NodeType.Comment),
-		Prefix("<!ATTLIST", NodeType.AttributeList),
-		Prefix("<?xml", NodeType.Prolog),
+	const auto prefixes = [
+		Prefix("<xml>", NodeType.StartTag),
+		Prefix("</xml>", NodeType.EmptyTag),
+		Prefix("<!ELEMENT>", NodeType.Element),
+		Prefix("<!DOCTYPE>", NodeType.DocType),
+		Prefix("<!NOTATION>", NodeType.Notation),
+		Prefix("<![CDATA[]]>", NodeType.CData),
+		Prefix("<!-- -->", NodeType.Comment),
+		Prefix("<!ATTLIST>", NodeType.AttributeList),
+		Prefix("<?xml?>", NodeType.Prolog),
 		Prefix(">", NodeType.Unknown),
 		Prefix("Test", NodeType.Text)
 	];
 
 	foreach(T ; TestInputTypes) {
+		//pragma(msg, T);
 		foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
 			foreach(it; prefixes) {
+				//logf("%s", it.prefix);
 				auto input = makeTestInputTypes!T(it.prefix);
 				auto lexer = Lexer!(T,P)(input);
 
 				auto n = lexer.front;
-				assert(n.nodeType == it.type, to!string(n.nodeType));
+				assert(n.nodeType == it.type, 
+					to!string(n.nodeType) ~ " " ~ to!string(it.type));
+			}
+		}
+	}
+}
+
+unittest {
+	import std.conv : to;
+
+	const auto testStrs = [
+		"<xml> Some text that should result in a textnode</xml>",
+		"<xml foo=\"bar\"> Some text that should result in a textnode</xml>",
+	];	
+
+	foreach(T ; TestInputTypes) {
+		//pragma(msg, T);
+		foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
+			foreach(testStrIt; testStrs) {
+				auto testStr = makeTestInputTypes!T(testStrIt);
+				auto lexer = Lexer!(T,P)(testStr);
+
+				assert(!lexer.empty);
+				auto start = lexer.front;
+				lexer.popFront();
+				assert(!lexer.empty);
+				auto text = lexer.front;
+				lexer.popFront();
+				assert(!lexer.empty);
+				auto end = lexer.front;
+				lexer.popFront();
+				assert(lexer.empty, to!string(lexer.input));
 			}
 		}
 	}

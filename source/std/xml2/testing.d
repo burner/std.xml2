@@ -3,10 +3,12 @@ module std.xml2.testing;
 import std.array : empty, front, popFront;
 import std.typecons : TypeTuple;
 
-alias TestInputTypes = TypeTuple!(immutable(ubyte)[],char[],string,
-		immutable(ushort)[],wstring,
-		immutable(uint)[],dstring,
-		CharInputRange!string);
+alias TestInputTypes = TypeTuple!(
+	char[], wchar[], dchar[],
+	string, wstring, dstring,
+	immutable(ubyte)[], immutable(ushort)[], immutable(uint)[],
+	//CharInputRange!string
+);
 
 struct CharInputRange(T) {
 	T input;
