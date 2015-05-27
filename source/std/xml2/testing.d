@@ -7,14 +7,15 @@ alias TestInputTypes = TypeTuple!(
 	char[], wchar[], dchar[],
 	string, wstring, dstring,
 	immutable(ubyte)[], immutable(ushort)[], immutable(uint)[],
-	//CharInputRange!string
+	//CharInputRange!dstring
 );
 
 struct CharInputRange(T) {
 	T input;
 
-	this(T input) {
-		this.input = input;
+	this(string input) {
+		import std.conv : to;
+		this.input = to!T(input);
 	}
 
 	@property auto front() {

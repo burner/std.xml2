@@ -2,8 +2,10 @@ module std.xml2.lexer;
 
 import std.xml2.testing;
 
-import std.array : empty;
+import std.array : empty, back;
 import std.typecons : Flag;
+import std.range.primitives : ElementEncodingType, ElementType, hasSlicing;
+
 
 version(unittest) {
 	import std.experimental.logger;
@@ -57,7 +59,7 @@ enum NodeType {
 
 struct Node(Input) {
 	NodeType nodeType;
-	Input input;
+	ElementEncodingType!(Input)[] input;
 
 	Attributes!Input attributes;
 
@@ -153,7 +155,7 @@ struct Lexer(Input,
 				}
 			} else if(this.input.front == '/') {
 				this.popAndAdvance();
-				return NodeType.EmptyTag;
+				return NodeType.EndTag;
 			} else {
 				return NodeType.StartTag;
 			}
@@ -163,8 +165,6 @@ struct Lexer(Input,
 
 		return NodeType.Unknown;
 	}
-
-	import std.range.primitives;
 
 	static if(hasSlicing!Input || isSomeString!Input) {
 		Input eatUntil(T)(const T until) {
@@ -225,13 +225,18 @@ struct Lexer(Input,
 				version(unittest) log("TODO: Error Handling");
 			case NodeType.StartTag: { 
 				node.input = this.eatUntil('>');
+				if(node.nodeType == NodeType.StartTag
+						&& !node.input.empty && node.input.back == '/') 
+				{
+					node.nodeType = NodeType.EmptyTag;
+				}
 				this.testAndEatPrefix('>');
 				break;
 			}
 			case NodeType.EndTag:
 				goto case NodeType.StartTag;
 			case NodeType.EmptyTag:
-				goto case NodeType.StartTag;
+				assert(false, "can't be found here, is done one step later");
 			case NodeType.CData: { 
 				node.input = this.eatUntil("]]>");
 				this.testAndEatPrefix("]]>");
@@ -270,10 +275,15 @@ struct Lexer(Input,
 	}
 }
 
-unittest {
+unittest { // testAndEatPrefix
 	foreach(T ; TestInputTypes) {
 		auto input = makeTestInputTypes!T("<xml></xml>");
 		auto lexer = Lexer!T(input);
+		auto lexer2 = Lexer!T(input);
+		assert(lexer.testAndEatPrefix("<xml"));
+		assert(lexer2.testAndEatPrefix('<'));
+		assert(!lexer2.testAndEatPrefix('>'));
+		assert(!lexer.testAndEatPrefix("</xml"));
 	}
 }
 
@@ -298,7 +308,10 @@ unittest {
 
 	const auto prefixes = [
 		Prefix("<xml>", NodeType.StartTag),
-		Prefix("</xml>", NodeType.EmptyTag),
+		Prefix("</xml>", NodeType.EndTag),
+		Prefix("<xml/>", NodeType.EmptyTag),
+ 		// Just to check correct access, actually invalid node
+		Prefix("</>", NodeType.EndTag),
 		Prefix("<!ELEMENT>", NodeType.Element),
 		Prefix("<!DOCTYPE>", NodeType.DocType),
 		Prefix("<!NOTATION>", NodeType.Notation),
@@ -311,16 +324,17 @@ unittest {
 	];
 
 	foreach(T ; TestInputTypes) {
-		//pragma(msg, T);
 		foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
 			foreach(it; prefixes) {
-				//logf("%s", it.prefix);
+				//logf("'%s'", it.prefix);
 				auto input = makeTestInputTypes!T(it.prefix);
 				auto lexer = Lexer!(T,P)(input);
 
 				auto n = lexer.front;
+				//log(T.stringof);
 				assert(n.nodeType == it.type, 
-					to!string(n.nodeType) ~ " " ~ to!string(it.type));
+					to!string(n.nodeType) ~ " " ~ to!string(it.type) ~ " '" 
+					~ to!string(n.input) ~ "'");
 			}
 		}
 	}
