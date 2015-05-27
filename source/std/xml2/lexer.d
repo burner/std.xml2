@@ -6,7 +6,6 @@ import std.array : empty, back;
 import std.typecons : Flag;
 import std.range.primitives : ElementEncodingType, ElementType, hasSlicing;
 
-
 version(unittest) {
 	import std.experimental.logger;
 }
@@ -33,6 +32,17 @@ struct SourcePosition(TrackPosition track) {
 			}
 		}
 	}
+
+	void toString(void delegate(const(char)[]) @trusted sink) const @safe {
+		sink("Pos(");
+		static if(track) {
+			import std.conv : to;
+			sink(to!string(this.line));
+			sink(",");
+			sink(to!string(this.column));
+		}
+		sink(")");
+	}
 }
 
 unittest {
@@ -57,14 +67,20 @@ enum NodeType {
 	Prolog,
 }
 
-struct Node(Input) {
-	NodeType nodeType;
-	ElementEncodingType!(Input)[] input;
-
-	Attributes!Input attributes;
-
-	this(in NodeType nodeType) {
-		this.nodeType = nodeType;
+void toString(NodeType type, void delegate(const(char)[]) @trusted output) @safe {
+	final switch(type) {
+		case NodeType.Unknown: output("Unknown");
+		case NodeType.StartTag: output("StartTag");
+		case NodeType.EndTag: output("EndTag");
+		case NodeType.EmptyTag: output("EmptyTag");
+		case NodeType.CData: output("CData");
+		case NodeType.Text: output("Text");
+		case NodeType.AttributeList: output("AttributeList");
+		case NodeType.DocType: output("DocType");
+		case NodeType.Element: output("Element");
+		case NodeType.Comment: output("Comment");
+		case NodeType.Notation: output("Notation");
+		case NodeType.Prolog: output("Prolog");
 	}
 }
 
@@ -74,14 +90,39 @@ struct Lexer(Input,
 	EagerAttributeParse eagerAttributeParse = EagerAttributeParse.no
 ) {
 
+	struct Node {
+		NodeType nodeType;
+		ElementEncodingType!(Input)[] input;
+	
+		SourcePosition!trackPosition position;
+	
+		Attributes!Input attributes;
+	
+		this(in NodeType nodeType) {
+			this.nodeType = nodeType;
+		}
+	
+		void toString(void delegate(const(char)[]) @trusted sink) @safe {
+			import std.conv : to;
+			sink("Node(");	
+			this.nodeType.toString(sink);
+			sink(",");
+			this.position.toString(sink);
+			sink(",");
+			sink(to!string(this.input));
+			sink(")");
+		}
+	}
+
 	SourcePosition!trackPosition position;
 	Input input;
-	Node!Input ret;
+	Node ret;
 	bool buildNext;
 
 	this(Input input) {
 		this.input = input;
 		this.buildNext = true;
+		this.eatWhitespace();
 	}
 
 	@property bool empty() {
@@ -130,9 +171,11 @@ struct Lexer(Input,
 	}
 
 	NodeType getAndEatNodeType() {
+		assert(!this.input.empty);
 		if(this.input.front == '<') {
 			this.popAndAdvance();
 
+			assert(!this.input.empty);
 			if(this.input.front == '!') {
 				this.popAndAdvance();
 				if(testAndEatPrefix("ELEMENT")) {
@@ -203,22 +246,28 @@ struct Lexer(Input,
 		}
 	}
 
-	@property Node!Input front() {
+	@property Node front() {
 		if(this.buildNext) {
-			this.frontImpl(&this.ret);
-			this.buildNext = false;
+			if(this.input.empty) {
+				throw new Exception("Input empty");
+			} else {
+				this.frontImpl(&this.ret);
+				this.buildNext = false;
+			}
 		}
 		return this.ret;
 	}
 
-	void frontImpl(Node!Input* node) {
-		this.eatWhitespace();
+	void frontImpl(Node* node) {
+		//this.eatWhitespace();
 
+		auto pos = this.position;
 		const NodeType nodeType = getAndEatNodeType();
 
 		import std.conv : emplace;
 
 		emplace(node, nodeType);
+		node.position = pos;
 
 		final switch(nodeType) {
 			case NodeType.Unknown:
@@ -265,6 +314,8 @@ struct Lexer(Input,
 				break;
 			}
 		}
+
+		this.eatWhitespace();
 	}
 
 	private void eatWhitespace() {
@@ -366,6 +417,31 @@ unittest {
 				lexer.popFront();
 				assert(lexer.empty, to!string(lexer.input));
 			}
+		}
+	}
+}
+
+unittest {
+	import std.file : dirEntries, SpanMode, readText;
+	import std.stdio : writeln;
+	import std.path : extension;
+	import std.string : indexOf;
+	import std.algorithm.iteration : filter;
+	foreach(string name; dirEntries("tests", SpanMode.depth)
+			.filter!(a => extension(a) == ".xml" 
+				&& a.indexOf("not") == -1
+				&& a.indexOf("invalid") == -1
+			)
+		)
+	{
+		auto s = readText(name);
+		log(name);
+
+		auto lexer = Lexer!(string,TrackPosition.yes)(s);
+		while(!lexer.empty) {
+			auto f = lexer.front;
+			//log(f);
+			lexer.popFront();
 		}
 	}
 }
