@@ -4,8 +4,8 @@ import std.array : empty, front, popFront;
 import std.typecons : TypeTuple;
 
 alias TestInputTypes = TypeTuple!(
-	char[], wchar[], dchar[],
 	string, wstring, dstring,
+	char[], wchar[], dchar[],
 	immutable(ubyte)[], immutable(ushort)[], immutable(uint)[],
 	//CharInputRange!dstring
 );

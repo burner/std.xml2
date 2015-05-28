@@ -92,6 +92,8 @@ struct Lexer(Input,
 	EagerAttributeParse eagerAttributeParse = EagerAttributeParse.no
 ) {
 
+	import std.xml2.misc : ForwardRangeInput;
+
 	struct Node {
 		NodeType nodeType;
 		ElementEncodingType!(Input)[] input;
@@ -117,12 +119,12 @@ struct Lexer(Input,
 	}
 
 	SourcePosition!trackPosition position;
-	Input input;
+	ForwardRangeInput!(Input,16) input;
 	Node ret;
 	bool buildNext;
 
 	this(Input input) {
-		this.input = input;
+		this.input = ForwardRangeInput!(Input,16)(input);
 		this.buildNext = true;
 		this.eatWhitespace();
 	}
@@ -149,6 +151,7 @@ struct Lexer(Input,
 	import std.traits : isSomeChar, isSomeString;
 
 	bool testAndEatPrefix(Prefix)(Prefix prefix) if(isSomeChar!Prefix) {
+		assert(!this.input.empty);
 		if(this.input.front == prefix) {
 			this.popAndAdvance();
 			return true;
@@ -158,14 +161,18 @@ struct Lexer(Input,
 	}
 
 	bool testAndEatPrefix(Prefix)(Prefix prefix) if(!isSomeChar!Prefix) {
-		while(!this.input.empty && !prefix.empty && 
-				this.input.front == prefix.front) 
-		{
-			this.popAndAdvance();
-			prefix.popFront();
+		import std.xml2.misc : indexOfX;
+		import std.traits : isArray;
+
+		static if(isArray!(typeof(this.input))) {
+			auto idx = this.input.indexOfX(prefix);
+		} else {
+			//this.input.prefetch();
+			//auto idx = this.input.indexOfX(this.input.getBuffer());
+			auto idx = -1;
 		}
-	
-		if(prefix.empty) {
+		if(idx == 0) {
+			this.popAndAdvance(prefix.length);
 			return true;
 		} else {
 			return false;
@@ -257,7 +264,7 @@ struct Lexer(Input,
 		//this.eatWhitespace();
 
 		auto pos = this.position;
-		const NodeType nodeType = getAndEatNodeType();
+		const NodeType nodeType = this.getAndEatNodeType();
 
 		import std.conv : emplace;
 		import std.xml2.misc : indexOfX;
@@ -427,6 +434,27 @@ unittest {
 	}
 }
 
+/*unittest {
+	import std.conv : to;
+
+	const auto testStrs = [
+		"<̀A/>"
+	];	
+
+	foreach(T ; TestInputTypes) {
+		//pragma(msg, T);
+		foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
+			foreach(testStrIt; testStrs) {
+				log(T.stringof);
+				auto testStr = makeTestInputTypes!T(testStrIt);
+				auto lexer = Lexer!(T,P)(testStr);
+				assert(!lexer.empty);
+				auto f = lexer.front;
+			}
+		}
+	}
+}
+
 unittest {
 	import std.file : dirEntries, SpanMode, readText;
 	import std.stdio : writeln;
@@ -455,4 +483,4 @@ unittest {
 			//warning(e.toString());
 		}
 	}
-}
+}*/
