@@ -60,6 +60,7 @@ enum NodeType {
 	CData,
 	Text,
 	AttributeList,
+	ProcessingInstruction,
 	DocType,
 	Element,
 	Comment,
@@ -76,6 +77,7 @@ void toString(NodeType type, void delegate(const(char)[]) @trusted output) @safe
 		case NodeType.CData: output("CData");
 		case NodeType.Text: output("Text");
 		case NodeType.AttributeList: output("AttributeList");
+		case NodeType.ProcessingInstruction: output("ProcessingInstruction");
 		case NodeType.DocType: output("DocType");
 		case NodeType.Element: output("Element");
 		case NodeType.Comment: output("Comment");
@@ -193,9 +195,7 @@ struct Lexer(Input,
 				}
 			} else if(this.input.front == '?') {
 				this.popAndAdvance();
-				if(testAndEatPrefix("xml")) {
-					return NodeType.Prolog;
-				}
+				return NodeType.ProcessingInstruction;
 			} else if(this.input.front == '/') {
 				this.popAndAdvance();
 				return NodeType.EndTag;
@@ -211,14 +211,9 @@ struct Lexer(Input,
 
 	static if(hasSlicing!Input || isSomeString!Input) {
 		Input eatUntil(T)(const T until) {
-			import std.string : indexOf;
-			import std.xml2.misc: indexOf;
-			static if(isSomeString!Input) { // TODO: Fix overload resulotion
-				auto idx = this.input.indexOf(until);
-			} else {
-				auto idx = std.xml2.misc.indexOf(this.input,until);
-			}
-			//assert(idx != -1);
+			import std.xml2.misc: indexOfX;
+
+			auto idx = indexOfX(this.input, until);
 			if(idx == -1) {
 				idx = this.input.length;
 			}
@@ -265,13 +260,14 @@ struct Lexer(Input,
 		const NodeType nodeType = getAndEatNodeType();
 
 		import std.conv : emplace;
+		import std.xml2.misc : indexOfX;
 
 		emplace(node, nodeType);
 		node.position = pos;
 
 		final switch(nodeType) {
 			case NodeType.Unknown:
-				version(unittest) log("TODO: Error Handling");
+				version(unittest) log("TODO: Error Handling ", pos);
 			case NodeType.StartTag: { 
 				node.input = this.eatUntil('>');
 				if(node.nodeType == NodeType.StartTag
@@ -297,6 +293,8 @@ struct Lexer(Input,
 			}
 			case NodeType.AttributeList:
 				goto case NodeType.StartTag;
+			case NodeType.ProcessingInstruction:
+				goto case NodeType.Prolog;
 			case NodeType.DocType:
 				goto case NodeType.StartTag;
 			case NodeType.Element:
@@ -310,6 +308,9 @@ struct Lexer(Input,
 				goto case NodeType.StartTag;
 			case NodeType.Prolog: { 
 				node.input = this.eatUntil("?>");
+				if(node.input.indexOfX("xml ") == 0) {
+					node.nodeType = NodeType.Prolog;
+				}
 				this.testAndEatPrefix("?>");
 				break;
 			}
@@ -351,6 +352,7 @@ unittest { // eatWhitespace
 
 unittest {
 	import std.conv : to;
+	import std.xml2.misc : toStringX;
 
 	static struct Prefix {
 		string prefix;
@@ -369,7 +371,8 @@ unittest {
 		Prefix("<![CDATA[]]>", NodeType.CData),
 		Prefix("<!-- -->", NodeType.Comment),
 		Prefix("<!ATTLIST>", NodeType.AttributeList),
-		Prefix("<?xml?>", NodeType.Prolog),
+		Prefix("<?Hello ?>", NodeType.ProcessingInstruction),
+		Prefix("<?xml ?>", NodeType.Prolog),
 		Prefix(">", NodeType.Unknown),
 		Prefix("Test", NodeType.Text)
 	];
@@ -377,15 +380,18 @@ unittest {
 	foreach(T ; TestInputTypes) {
 		foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
 			foreach(it; prefixes) {
+				import std.xml2.misc : indexOfX;
 				//logf("'%s'", it.prefix);
 				auto input = makeTestInputTypes!T(it.prefix);
 				auto lexer = Lexer!(T,P)(input);
 
 				auto n = lexer.front;
 				//log(T.stringof);
-				assert(n.nodeType == it.type, 
-					to!string(n.nodeType) ~ " " ~ to!string(it.type) ~ " '" 
-					~ to!string(n.input) ~ "'");
+				assert(n.nodeType == it.type, it.prefix ~ "|" ~
+					toStringX(lexer.input) ~ "|" ~ to!string(n.nodeType) ~ 
+					" " ~ to!string(it.type) ~ " '" ~ toStringX(n.input) ~ 
+					"' " ~ T.stringof ~ " " ~
+					to!string(indexOfX(n.input, "xml ")));
 			}
 		}
 	}
@@ -434,14 +440,19 @@ unittest {
 			)
 		)
 	{
-		auto s = readText(name);
-		log(name);
+		import std.utf : UTFException;
 
-		auto lexer = Lexer!(string,TrackPosition.yes)(s);
-		while(!lexer.empty) {
-			auto f = lexer.front;
-			//log(f);
-			lexer.popFront();
+		log(name);
+		try {
+			auto s = readText(name);
+			auto lexer = Lexer!(string,TrackPosition.yes)(s);
+			while(!lexer.empty) {
+				auto f = lexer.front;
+				//log(f);
+				lexer.popFront();
+			}
+		} catch(UTFException e) {
+			//warning(e.toString());
 		}
 	}
 }
