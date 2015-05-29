@@ -150,17 +150,23 @@ struct Lexer(Input,
 
 	import std.traits : isSomeChar, isSomeString;
 
-	bool testAndEatPrefix(Prefix)(Prefix prefix) if(isSomeChar!Prefix) {
+	bool testAndEatPrefix(Prefix)(Prefix prefix, bool eatMatch = true) 
+			if(isSomeChar!Prefix) 
+	{
 		assert(!this.input.empty);
 		if(this.input.front == prefix) {
-			this.popAndAdvance();
+			if(eatMatch) {
+				this.popAndAdvance();
+			}
 			return true;
 		} else {
 			return false;
 		}
 	}
 
-	bool testAndEatPrefix(Prefix)(Prefix prefix) if(!isSomeChar!Prefix) {
+	bool testAndEatPrefix(Prefix)(Prefix prefix, bool eatMatch = true) 
+			if(!isSomeChar!Prefix) 
+	{
 		import std.xml2.misc : indexOfX;
 		import std.traits : isArray;
 
@@ -174,7 +180,9 @@ struct Lexer(Input,
 			auto idx = -1;
 		}
 		if(idx == 0) {
-			this.popAndAdvance(prefix.length);
+			if(eatMatch) {
+				this.popAndAdvance(prefix.length);
+			}
 			return true;
 		} else {
 			return false;
@@ -241,7 +249,7 @@ struct Lexer(Input,
 		import std.array : appender, Appender;
 		auto eatUntil(T)(const T until) {
 			auto app = appender!(ElementEncodingType!(Input)[])();
-			while(this.input.empty && !this.testAndEatPrefix(until)) {
+			while(!this.input.empty && !this.testAndEatPrefix(until, false)) {
 				app.put(this.input.front);	
 				this.popAndAdvance();
 			}
@@ -399,8 +407,7 @@ unittest {
 				assert(n.nodeType == it.type, it.prefix ~ "|" ~
 					toStringX(lexer.input) ~ "|" ~ to!string(n.nodeType) ~ 
 					" " ~ to!string(it.type) ~ " '" ~ toStringX(n.input) ~ 
-					"' " ~ T.stringof ~ " " ~
-					to!string(indexOfX(n.input, "xml ")));
+					"' " ~ T.stringof);
 			}
 		}
 	}
@@ -436,7 +443,7 @@ unittest {
 	}
 }
 
-/*unittest {
+unittest {
 	import std.conv : to;
 
 	const auto testStrs = [
@@ -447,7 +454,6 @@ unittest {
 		//pragma(msg, T);
 		foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
 			foreach(testStrIt; testStrs) {
-				log(T.stringof);
 				auto testStr = makeTestInputTypes!T(testStrIt);
 				auto lexer = Lexer!(T,P)(testStr);
 				assert(!lexer.empty);
@@ -457,7 +463,7 @@ unittest {
 	}
 }
 
-unittest {
+/*unittest {
 	import std.file : dirEntries, SpanMode, readText;
 	import std.stdio : writeln;
 	import std.path : extension;
