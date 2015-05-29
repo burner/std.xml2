@@ -7,7 +7,7 @@ alias TestInputTypes = TypeTuple!(
 	string, wstring, dstring,
 	char[], wchar[], dchar[],
 	immutable(ubyte)[], immutable(ushort)[], immutable(uint)[],
-	//CharInputRange!dstring
+	CharInputRange!string
 );
 
 struct CharInputRange(T) {

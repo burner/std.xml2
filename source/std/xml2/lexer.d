@@ -3,6 +3,7 @@ module std.xml2.lexer;
 import std.xml2.testing;
 
 import std.array : empty, back;
+import std.conv : to;
 import std.typecons : Flag;
 import std.range.primitives : ElementEncodingType, ElementType, hasSlicing;
 
@@ -118,13 +119,23 @@ struct Lexer(Input,
 		}
 	}
 
+	import std.traits : isArray, isSomeString;
+
 	SourcePosition!trackPosition position;
-	Input input;
+	static if(isSomeString!Input || isArray!Input) {
+		Input input;
+	} else {
+		ForwardRangeInput!(Input,16) input;
+	}
 	Node ret;
 	bool buildNext;
 
 	this(Input input) {
-		this.input = input;
+		static if(isSomeString!Input || isArray!Input) {
+			this.input = input;
+		} else {
+			this.input = ForwardRangeInput!(Input,16)(input);
+		}
 		this.buildNext = true;
 		this.eatWhitespace();
 	}
@@ -148,7 +159,7 @@ struct Lexer(Input,
 		}	
 	}
 
-	import std.traits : isSomeChar, isSomeString;
+	import std.traits : isSomeChar;
 
 	bool testAndEatPrefix(Prefix)(Prefix prefix, bool eatMatch = true) 
 			if(isSomeChar!Prefix) 
@@ -168,16 +179,14 @@ struct Lexer(Input,
 			if(!isSomeChar!Prefix) 
 	{
 		import std.xml2.misc : indexOfX;
-		import std.traits : isArray;
 
 		static if(isSomeString!(typeof(this.input)) ||
 				isArray!(typeof(this.input))) 
 		{
 			auto idx = this.input.indexOfX(prefix);
 		} else {
-			//this.input.prefetch();
-			//auto idx = this.input.indexOfX(this.input.getBuffer());
-			auto idx = -1;
+			this.input.prefetch();
+			auto idx = this.input.getBuffer().indexOfX(prefix);
 		}
 		if(idx == 0) {
 			if(eatMatch) {
@@ -349,7 +358,8 @@ unittest { // testAndEatPrefix
 		auto input = makeTestInputTypes!T("<xml></xml>");
 		auto lexer = Lexer!T(input);
 		auto lexer2 = Lexer!T(input);
-		assert(lexer.testAndEatPrefix("<xml"), T.stringof);
+		assert(lexer.testAndEatPrefix("<xml"), T.stringof ~ " (" ~ 
+			to!string(lexer.input) ~ ")");
 		assert(lexer2.testAndEatPrefix('<'));
 		assert(!lexer2.testAndEatPrefix('>'));
 		assert(!lexer.testAndEatPrefix("</xml"));
@@ -368,7 +378,6 @@ unittest { // eatWhitespace
 }
 
 unittest {
-	import std.conv : to;
 	import std.xml2.misc : toStringX;
 
 	static struct Prefix {

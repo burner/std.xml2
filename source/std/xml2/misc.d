@@ -94,8 +94,10 @@ import std.range.primitives : isInputRange;
 struct ForwardRangeInput(T, size_t bufSize) if(isInputRange!T) {
 	import std.range.primitives : ElementEncodingType;
 	import std.traits : Unqual;
+
+	alias InputType = Unqual!(ElementEncodingType!(T));
 	
-	private Unqual!(ElementEncodingType!(T))[bufSize] buf;
+	private InputType[bufSize] buf;
 	private size_t idx;
 	private T input;
 
@@ -145,6 +147,26 @@ struct ForwardRangeInput(T, size_t bufSize) if(isInputRange!T) {
 
 	auto getBuffer() {
 		return this.buf[0 .. idx];
+	}
+
+	string toString() {
+		import std.array : appender;
+		auto app = appender!string();
+
+		while(!this.empty) {
+			auto it = this.front;
+			static if(is(InputType == ubyte)) {
+				app.put(cast(char)it);
+			} else static if(is(InputType == ushort)) {
+				app.put(cast(wchar)it);
+			} else static if(is(InputType == uint)) {
+				app.put(cast(dchar)it);
+			}
+
+			this.popFront();
+		}
+
+		return app.data;
 	}
 }
 
