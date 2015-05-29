@@ -70,19 +70,19 @@ enum NodeType {
 
 void toString(NodeType type, void delegate(const(char)[]) @trusted output) @safe {
 	final switch(type) {
-		case NodeType.Unknown: output("Unknown");
-		case NodeType.StartTag: output("StartTag");
-		case NodeType.EndTag: output("EndTag");
-		case NodeType.EmptyTag: output("EmptyTag");
-		case NodeType.CData: output("CData");
-		case NodeType.Text: output("Text");
-		case NodeType.AttributeList: output("AttributeList");
-		case NodeType.ProcessingInstruction: output("ProcessingInstruction");
-		case NodeType.DocType: output("DocType");
-		case NodeType.Element: output("Element");
-		case NodeType.Comment: output("Comment");
-		case NodeType.Notation: output("Notation");
-		case NodeType.Prolog: output("Prolog");
+		case NodeType.Unknown: output("Unknown"); break;
+		case NodeType.StartTag: output("StartTag"); break;
+		case NodeType.EndTag: output("EndTag"); break;
+		case NodeType.EmptyTag: output("EmptyTag"); break;
+		case NodeType.CData: output("CData"); break;
+		case NodeType.Text: output("Text"); break;
+		case NodeType.AttributeList: output("AttributeList"); break;
+		case NodeType.ProcessingInstruction: output("ProcessingInstruction"); break;
+		case NodeType.DocType: output("DocType"); break;
+		case NodeType.Element: output("Element"); break;
+		case NodeType.Comment: output("Comment"); break;
+		case NodeType.Notation: output("Notation"); break;
+		case NodeType.Prolog: output("Prolog"); break;
 	}
 }
 
