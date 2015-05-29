@@ -66,7 +66,7 @@ unittest {
 }
 
 string toStringX(C)(C c) {
-	import std.traits : isSomeString, Unqual;
+	import std.traits : hasMember, isSomeString, Unqual;
 	import std.conv : to;
 	static if(isSomeString!C) {
 		return to!string(c);
@@ -74,12 +74,14 @@ string toStringX(C)(C c) {
 		import std.range.primitives : ElementType;
 		import std.exception : assumeUnique;
 
-		static if(is(Unqual!(ElementType!C) == ubyte)) {
-			return assumeUnique((cast(char*)c.ptr)[0 .. c.length]);
-		} else static if(is(Unqual!(ElementType!C) == ushort)) {
-			return to!string((cast(wchar*)c.ptr)[0 .. c.length]);
-		} else static if(is(Unqual!(ElementType!C) == uint)) {
-			return to!string((cast(dchar*)c.ptr)[0 .. c.length]);
+		static if(hasMember!(C, "ptr")) {
+			static if(is(Unqual!(ElementType!C) == ubyte)) {
+				return assumeUnique((cast(char*)c.ptr)[0 .. c.length]);
+			} else static if(is(Unqual!(ElementType!C) == ushort)) {
+				return to!string((cast(wchar*)c.ptr)[0 .. c.length]);
+			} else static if(is(Unqual!(ElementType!C) == uint)) {
+				return to!string((cast(dchar*)c.ptr)[0 .. c.length]);
+			}
 		} else {
 			//static assert(false, C.stringof);
 			return "";

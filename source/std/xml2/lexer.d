@@ -119,12 +119,12 @@ struct Lexer(Input,
 	}
 
 	SourcePosition!trackPosition position;
-	ForwardRangeInput!(Input,16) input;
+	Input input;
 	Node ret;
 	bool buildNext;
 
 	this(Input input) {
-		this.input = ForwardRangeInput!(Input,16)(input);
+		this.input = input;
 		this.buildNext = true;
 		this.eatWhitespace();
 	}
@@ -164,7 +164,9 @@ struct Lexer(Input,
 		import std.xml2.misc : indexOfX;
 		import std.traits : isArray;
 
-		static if(isArray!(typeof(this.input))) {
+		static if(isSomeString!(typeof(this.input)) ||
+				isArray!(typeof(this.input))) 
+		{
 			auto idx = this.input.indexOfX(prefix);
 		} else {
 			//this.input.prefetch();
@@ -339,7 +341,7 @@ unittest { // testAndEatPrefix
 		auto input = makeTestInputTypes!T("<xml></xml>");
 		auto lexer = Lexer!T(input);
 		auto lexer2 = Lexer!T(input);
-		assert(lexer.testAndEatPrefix("<xml"));
+		assert(lexer.testAndEatPrefix("<xml"), T.stringof);
 		assert(lexer2.testAndEatPrefix('<'));
 		assert(!lexer2.testAndEatPrefix('>'));
 		assert(!lexer.testAndEatPrefix("</xml"));
