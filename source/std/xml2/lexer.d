@@ -472,7 +472,7 @@ unittest {
 	}
 }
 
-/*unittest {
+unittest {
 	import std.file : dirEntries, SpanMode, readText;
 	import std.stdio : writeln;
 	import std.path : extension;
@@ -500,4 +500,4 @@ unittest {
 			//warning(e.toString());
 		}
 	}
-}*/
+}
