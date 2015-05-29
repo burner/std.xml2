@@ -81,7 +81,8 @@ string toStringX(C)(C c) {
 		} else static if(is(Unqual!(ElementType!C) == uint)) {
 			return to!string((cast(dchar*)c.ptr)[0 .. c.length]);
 		} else {
-			static assert(false, C.stringof);
+			//static assert(false, C.stringof);
+			return "";
 		}
 	}
 }
@@ -128,8 +129,14 @@ struct ForwardRangeInput(T, size_t bufSize) if(isInputRange!T) {
 	}
 
 	void prefetch() {
+		import std.array : empty, front, popFront;
+		import std.traits : isArray;
 		for(; this.idx < buf.length && !this.input.empty; ++this.idx) {
-			this.buf[this.idx] = this.input.front;
+			static if(isArray!T) {
+				this.buf[this.idx] = this.input[0];
+			} else {
+				this.buf[this.idx] = this.input.front;
+			}
 			this.input.popFront();
 		}	
 	}

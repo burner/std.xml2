@@ -216,7 +216,7 @@ struct Lexer(Input,
 		return NodeType.Unknown;
 	}
 
-	static if(hasSlicing!Input || isSomeString!Input) {
+	/*static if(hasSlicing!Input || isSomeString!Input) {
 		Input eatUntil(T)(const T until) {
 			import std.xml2.misc: indexOfX;
 
@@ -235,10 +235,10 @@ struct Lexer(Input,
 
 			return ret;
 		}
-	} else {
+	} else {*/
 		import std.array : appender, Appender;
 		auto eatUntil(T)(const T until) {
-			auto app = appender!(ElementType!(Input)[])();
+			auto app = appender!(ElementEncodingType!(Input)[])();
 			while(this.input.empty && !this.testAndEatPrefix(until)) {
 				app.put(this.input.front);	
 				this.popAndAdvance();
@@ -246,7 +246,7 @@ struct Lexer(Input,
 
 			return app.data;
 		}
-	}
+	//}
 
 	@property Node front() {
 		if(this.buildNext) {
