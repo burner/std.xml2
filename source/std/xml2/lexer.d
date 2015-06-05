@@ -303,13 +303,11 @@ struct Lexer(Input,
 	}
 
 	ElementEncodingType!(Input)[] balancedEatBraces() {
-		//pragma(msg, ElementEncodingType!(Input)[].stringof);
 		auto app = appender!(ElementEncodingType!(Input)[])();
-		//pragma(msg, typeof(app).stringof);
 		while(!this.input.empty 
-				&& this.input.front != '[' || this.input.front != '>') 
+				&& this.input.front != '[' && this.input.front != '>') 
 		{
-			app.put(this.input.front);	
+			app.put(this.input.front);
 			this.popAndAdvance();
 		}
 
@@ -625,7 +623,7 @@ unittest {
 	}
 }
 
-/*unittest {
+unittest {
 	import std.file : dirEntries, SpanMode, readText;
 	import std.stdio : writeln;
 	import std.path : extension;
@@ -655,4 +653,4 @@ unittest {
 			//log(name, e.toString());
 		}
 	}
-}*/
+}
