@@ -30,10 +30,12 @@ private ptrdiff_t indexOfImpl(C1,C2)(C1 c1, C2 c2) { // Only works for ascii
 
 		return -1;
 	} else {
-		import std.range.primitives : ElementType;
+		import std.range.primitives : ElementEncodingType;
 
-		ElementType!C1 a = cast(ElementType!C1)c2;
-		foreach(idx, it; c1) {
+		alias C = ElementEncodingType!C1;
+
+		immutable C a = cast(C)c2;
+		foreach(size_t idx, C it; c1) {
 			if(it == a) {
 				return idx;
 			}
@@ -84,6 +86,7 @@ string toStringX(C)(C c) {
 			}
 		} else {
 			//static assert(false, C.stringof);
+			//return to!string(c);
 			return "";
 		}
 	}

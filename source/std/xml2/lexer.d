@@ -1,11 +1,13 @@
 module std.xml2.lexer;
 
 import std.xml2.testing;
+import std.xml2.misc : toStringX;
 
 import std.array : empty, back;
 import std.conv : to;
 import std.typecons : Flag;
 import std.range.primitives : ElementEncodingType, ElementType, hasSlicing;
+import std.traits : isArray, isSomeString;
 
 version(unittest) {
 	import std.experimental.logger;
@@ -16,6 +18,16 @@ alias Attributes(Input) = Input[Input];
 alias TrackPosition = Flag!"TrackPosition";
 alias KeepComments = Flag!"KeepComments";
 alias EagerAttributeParse = Flag!"EagerAttributeParse";
+
+class XMLException : Exception {
+	this(string msg, string file = __FILE__, int line = __LINE__) {
+		super(msg, file, line);
+	}
+
+	this(XMLException old) {
+		super(old.msg, old.file, old.line);
+	}
+}
 
 struct SourcePosition(TrackPosition track) {
 	static if(track) {
@@ -118,8 +130,6 @@ struct Lexer(Input,
 			sink(")");
 		}
 	}
-
-	import std.traits : isArray, isSomeString;
 
 	SourcePosition!trackPosition position;
 	static if(isSomeString!Input || isArray!Input) {
@@ -235,7 +245,7 @@ struct Lexer(Input,
 		return NodeType.Unknown;
 	}
 
-	/*static if(hasSlicing!Input || isSomeString!Input) {
+	static if(hasSlicing!Input || isSomeString!Input) {
 		Input eatUntil(T)(const T until) {
 			import std.xml2.misc: indexOfX;
 
@@ -247,6 +257,7 @@ struct Lexer(Input,
 			auto ret = this.input[0 .. idx];
 
 			static if(TrackPosition.yes) {
+				//this.popAndAdvance(idx > 0 ? idx - 1 : 0);
 				this.popAndAdvance(idx);
 			} else {
 				this.input = this.input[idx .. $];
@@ -254,7 +265,7 @@ struct Lexer(Input,
 
 			return ret;
 		}
-	} else {*/
+	} else {
 		import std.array : appender, Appender;
 		auto eatUntil(T)(const T until) {
 			auto app = appender!(ElementEncodingType!(Input)[])();
@@ -265,21 +276,40 @@ struct Lexer(Input,
 
 			return app.data;
 		}
-	//}
+	}
 
 	@property Node front() {
 		if(this.buildNext) {
 			if(this.input.empty) {
 				throw new Exception("Input empty");
 			} else {
-				this.frontImpl(&this.ret);
+				bool didNotWork = false;
+				ubyte[__traits(classInstanceSize, XMLException)] exception;
+				this.frontImpl(&this.ret, didNotWork, exception);
+				this.buildNext = false;
+
+				if(didNotWork) {
+					throw new XMLException((cast(XMLException)exception.ptr));
+				}
+			}
+		}
+		return this.ret;
+	}
+
+	@property Node front(out bool didNotWork) {
+		if(this.buildNext) {
+			if(this.input.empty) {
+				throw new Exception("Input empty");
+			} else {
+				ubyte[__traits(classInstanceSize, XMLException)] exception;
+				this.frontImpl(&this.ret, didNotWork, exception);
 				this.buildNext = false;
 			}
 		}
 		return this.ret;
 	}
 
-	void frontImpl(Node* node) {
+	void frontImpl(Node* node, out bool didNotWork, void[] exception) {
 		//this.eatWhitespace();
 
 		auto pos = this.position;
@@ -293,7 +323,12 @@ struct Lexer(Input,
 
 		final switch(nodeType) {
 			case NodeType.Unknown:
-				version(unittest) log("TODO: Error Handling ", pos);
+				version(unittest) {
+					emplace!XMLException(
+						exception, "TODO: Error Handling", __FILE__, __LINE__);
+					didNotWork = true;
+				}
+				break;
 			case NodeType.StartTag: { 
 				node.input = this.eatUntil('>');
 				if(node.nodeType == NodeType.StartTag
@@ -349,6 +384,50 @@ struct Lexer(Input,
 		import std.uni : isWhite;
 		while(!this.input.empty && isWhite(this.input.front)) {
 			this.popAndAdvance();
+		}
+	}
+}
+
+unittest { // eatuntil
+	import std.algorithm.comparison : equal;
+	import std.format : format;
+	const auto strs = [
+		"helo",
+		">",
+		"xml>",
+		"<xml>"
+	];
+
+	foreach(T; TestInputTypes) {
+		foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
+			foreach(it; strs) {
+				for(size_t i = 0; i < it.length; ++i) {
+					//logf("%u '%c' %s", i, it[i], T.stringof);
+					auto input = makeTestInputTypes!T(it);
+					auto lexer = Lexer!(T,P)(input);
+					auto slice = lexer.eatUntil(it[i]);
+
+					assert(equal(slice, it[0 .. i]), 
+						format("%u '%c' '%s' '%s' %s", i, it[i], slice, it[0 .. i],
+							T.stringof
+						)
+					);
+
+					if(i+1 == it.length) {
+						assert(lexer.input.front == it[i],
+							format("%u '%c' '%s' '%s' %s '%s' T=%s P=%s", i, 
+								it[i], slice, it[0 .. i], T.stringof,
+								lexer.input, T.stringof, P.stringof
+							)
+						);
+					}
+					/*static if(isArray!T) {
+						assert(lexer.input == input[i .. $], "'" ~ 
+							toStringX(lexer.input) ~ "'  '" ~
+							toStringX(lexer) ~ "' " ~ toStringX(i));
+					}*/
+				}
+			}
 		}
 	}
 }
@@ -411,8 +490,11 @@ unittest {
 				auto input = makeTestInputTypes!T(it.prefix);
 				auto lexer = Lexer!(T,P)(input);
 
-				auto n = lexer.front;
-				//log(T.stringof);
+				typeof(lexer.front) n;
+				try {
+					n = lexer.front;
+				} catch(Exception e) {
+				}
 				assert(n.nodeType == it.type, it.prefix ~ "|" ~
 					toStringX(lexer.input) ~ "|" ~ to!string(n.nodeType) ~ 
 					" " ~ to!string(it.type) ~ " '" ~ toStringX(n.input) ~ 
@@ -437,16 +519,20 @@ unittest {
 				auto testStr = makeTestInputTypes!T(testStrIt);
 				auto lexer = Lexer!(T,P)(testStr);
 
-				assert(!lexer.empty);
-				auto start = lexer.front;
-				lexer.popFront();
-				assert(!lexer.empty);
-				auto text = lexer.front;
-				lexer.popFront();
-				assert(!lexer.empty);
-				auto end = lexer.front;
-				lexer.popFront();
-				assert(lexer.empty, to!string(lexer.input));
+				try {
+					assert(!lexer.empty);
+					auto start = lexer.front;
+					lexer.popFront();
+					assert(!lexer.empty);
+					auto text = lexer.front;
+					lexer.popFront();
+					assert(!lexer.empty);
+					auto end = lexer.front;
+					lexer.popFront();
+					assert(lexer.empty, to!string(lexer.input));
+				} catch(Exception e) {
+					logf("%s %s", e.toString(), T.stringof);
+				}
 			}
 		}
 	}
@@ -456,11 +542,10 @@ unittest {
 	import std.conv : to;
 
 	const auto testStrs = [
-		"<̀A/>"
+		"<A/>"
 	];	
 
 	foreach(T ; TestInputTypes) {
-		//pragma(msg, T);
 		foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
 			foreach(testStrIt; testStrs) {
 				auto testStr = makeTestInputTypes!T(testStrIt);
@@ -482,12 +567,13 @@ unittest {
 			.filter!(a => extension(a) == ".xml" 
 				&& a.indexOf("not") == -1
 				&& a.indexOf("invalid") == -1
+				&& a.indexOf("fail") == -1
 			)
 		)
 	{
 		import std.utf : UTFException;
-
 		log(name);
+
 		try {
 			auto s = readText(name);
 			auto lexer = Lexer!(string,TrackPosition.yes)(s);
@@ -497,7 +583,8 @@ unittest {
 				lexer.popFront();
 			}
 		} catch(UTFException e) {
-			//warning(e.toString());
+		} catch(Exception e) {
+			//log(name, e.toString());
 		}
 	}
 }
