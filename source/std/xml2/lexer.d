@@ -3,10 +3,11 @@ module std.xml2.lexer;
 import std.xml2.testing;
 import std.xml2.misc : toStringX;
 
-import std.array : empty, back;
+import std.array : empty, back, appender, Appender;
 import std.conv : to;
 import std.typecons : Flag;
-import std.range.primitives : ElementEncodingType, ElementType, hasSlicing;
+import std.range.primitives : ElementEncodingType, ElementType, hasSlicing,
+	isInputRange;
 import std.traits : isArray, isSomeString;
 
 version(unittest) {
@@ -96,6 +97,30 @@ void toString(NodeType type, void delegate(const(char)[]) @trusted output) @safe
 		case NodeType.Comment: output("Comment"); break;
 		case NodeType.Notation: output("Notation"); break;
 		case NodeType.Prolog: output("Prolog"); break;
+	}
+}
+
+void reprodcueNodeTypeString(T,O)(NodeType type, ref O output) @safe {
+	void toT(string s, ref O output) @trusted {
+		foreach(it; s) {
+			output.put(to!T(it));
+		}
+	}
+
+	final switch(type) {
+		case NodeType.Unknown: toT("Unknown", output); break;
+		case NodeType.StartTag: toT("<", output); break;
+		case NodeType.EndTag: toT(">", output); break;
+		case NodeType.EmptyTag: toT("</", output); break;
+		case NodeType.CData: toT("<![CDATA[", output); break;
+		case NodeType.Text: toT("Text", output); break;
+		case NodeType.AttributeList: toT("<!ATTLIST", output); break;
+		case NodeType.ProcessingInstruction: toT("<?", output); break;
+		case NodeType.DocType: toT("<!DOCTYPE", output); break;
+		case NodeType.Element: toT("Element", output); break;
+		case NodeType.Comment: toT("<!--", output); break;
+		case NodeType.Notation: toT("<!NOTATION", output); break;
+		case NodeType.Prolog: toT("<?xml", output); break;
 	}
 }
 
@@ -266,7 +291,6 @@ struct Lexer(Input,
 			return ret;
 		}
 	} else {
-		import std.array : appender, Appender;
 		auto eatUntil(T)(const T until) {
 			auto app = appender!(ElementEncodingType!(Input)[])();
 			while(!this.input.empty && !this.testAndEatPrefix(until, false)) {
@@ -276,6 +300,34 @@ struct Lexer(Input,
 
 			return app.data;
 		}
+	}
+
+	//ElementEncodingType!((Input)[]) balancedEatBraces() {
+	auto balancedEatBraces() {
+		//pragma(msg, ElementEncodingType!(Input)[].stringof);
+		auto app = appender!(ElementEncodingType!(Input)[])();
+		//pragma(msg, typeof(app).stringof);
+		while(!this.input.empty 
+				&& this.input.front != '[' || this.input.front != '>') 
+		{
+			app.put(this.input.front);	
+			this.popAndAdvance();
+		}
+
+		if(this.input.front == '[') {
+			this.testAndEatPrefix('[');
+			while(!this.input.empty && this.input.front != '>') {
+				Node tmp;
+				ubyte[__traits(classInstanceSize, XMLException)] exception;
+				bool didNotWork;
+				this.frontImpl(&tmp, didNotWork, exception);
+
+				//reprodcueNodeTypeString!(ElementType!Input)
+				//	(tmp.nodeType, app);
+			}
+		}
+		
+		return app.data;
 	}
 
 	@property Node front() {
@@ -309,7 +361,7 @@ struct Lexer(Input,
 		return this.ret;
 	}
 
-	void frontImpl(Node* node, out bool didNotWork, void[] exception) {
+	void frontImpl(Node* node, ref bool didNotWork, void[] exception) {
 		//this.eatWhitespace();
 
 		auto pos = this.position;
@@ -356,8 +408,14 @@ struct Lexer(Input,
 				goto case NodeType.StartTag;
 			case NodeType.ProcessingInstruction:
 				goto case NodeType.Prolog;
-			case NodeType.DocType:
-				goto case NodeType.StartTag;
+			case NodeType.DocType: {
+				//goto case NodeType.StartTag;
+				ElementEncodingType!(Input)[] tmp = this.balancedEatBraces();
+				pragma(msg, typeof(tmp).stringof);
+				//node.input = tmp;
+				this.testAndEatPrefix('>');
+				break;
+			}
 			case NodeType.Element:
 				goto case NodeType.StartTag;
 			case NodeType.Comment: { 
@@ -421,11 +479,6 @@ unittest { // eatuntil
 							)
 						);
 					}
-					/*static if(isArray!T) {
-						assert(lexer.input == input[i .. $], "'" ~ 
-							toStringX(lexer.input) ~ "'  '" ~
-							toStringX(lexer) ~ "' " ~ toStringX(i));
-					}*/
 				}
 			}
 		}
@@ -452,6 +505,25 @@ unittest { // eatWhitespace
 			auto lexer = Lexer!(T,P)(input);
 			lexer.eatWhitespace();
 			assert(lexer.empty);
+		}
+	}
+}
+
+unittest { // balancedEatUntil
+	const auto testStrs = [
+		"< < >>"
+	];	
+
+	foreach(T ; TestInputTypes) {
+		foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
+			foreach(testStrIt; testStrs) {
+				auto input = makeTestInputTypes!T(testStrIt);
+				auto lexer = Lexer!(T,P)(input);
+
+				assert(lexer.testAndEatPrefix('<'));
+				auto data = lexer.balancedEatBraces();
+				assert(lexer.testAndEatPrefix('>'));
+			}
 		}
 	}
 }
