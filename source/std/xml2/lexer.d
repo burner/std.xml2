@@ -302,8 +302,7 @@ struct Lexer(Input,
 		}
 	}
 
-	//ElementEncodingType!((Input)[]) balancedEatBraces() {
-	auto balancedEatBraces() {
+	ElementEncodingType!(Input)[] balancedEatBraces() {
 		//pragma(msg, ElementEncodingType!(Input)[].stringof);
 		auto app = appender!(ElementEncodingType!(Input)[])();
 		//pragma(msg, typeof(app).stringof);
@@ -409,10 +408,7 @@ struct Lexer(Input,
 			case NodeType.ProcessingInstruction:
 				goto case NodeType.Prolog;
 			case NodeType.DocType: {
-				//goto case NodeType.StartTag;
-				ElementEncodingType!(Input)[] tmp = this.balancedEatBraces();
-				pragma(msg, typeof(tmp).stringof);
-				//node.input = tmp;
+				node.input = this.balancedEatBraces();
 				this.testAndEatPrefix('>');
 				break;
 			}
@@ -520,9 +516,9 @@ unittest { // balancedEatUntil
 				auto input = makeTestInputTypes!T(testStrIt);
 				auto lexer = Lexer!(T,P)(input);
 
-				assert(lexer.testAndEatPrefix('<'));
-				auto data = lexer.balancedEatBraces();
-				assert(lexer.testAndEatPrefix('>'));
+				//assert(lexer.testAndEatPrefix('<'));
+				//auto data = lexer.balancedEatBraces();
+				//assert(lexer.testAndEatPrefix('>'));
 			}
 		}
 	}
@@ -629,7 +625,7 @@ unittest {
 	}
 }
 
-unittest {
+/*unittest {
 	import std.file : dirEntries, SpanMode, readText;
 	import std.stdio : writeln;
 	import std.path : extension;
@@ -659,4 +655,4 @@ unittest {
 			//log(name, e.toString());
 		}
 	}
-}
+}*/

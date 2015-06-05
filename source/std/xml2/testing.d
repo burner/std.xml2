@@ -2,6 +2,8 @@ module std.xml2.testing;
 
 import std.array : empty, front, popFront;
 import std.typecons : TypeTuple;
+import std.range.primitives : ElementType, ElementEncodingType;
+import std.experimental.logger;
 
 alias TestInputTypes = TypeTuple!(
 	string, wstring, dstring,
@@ -31,9 +33,13 @@ struct CharInputRange(T) {
 	}
 }
 
+unittest {
+	static assert(is(ElementType!(CharInputRange!string) == dchar));
+	static assert(is(ElementEncodingType!(CharInputRange!string) == dchar));
+}
+
 T makeTestInputTypes(T,S)(S s) {
 	import std.traits : isArray, isSomeString, isUnsigned;
-	import std.range.primitives;
 
 	import std.conv : to;
 	static if(isSomeString!T) {
