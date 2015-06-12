@@ -7,7 +7,7 @@ import std.array : empty, back, appender, Appender;
 import std.conv : to;
 import std.typecons : Flag;
 import std.range.primitives : ElementEncodingType, ElementType, hasSlicing,
-	isInputRange;
+	isInputRange, isOutputRange;
 import std.traits : isArray, isSomeString;
 
 version(unittest) {
@@ -100,7 +100,7 @@ void toString(NodeType type, void delegate(const(char)[]) @trusted output) @safe
 	}
 }
 
-void reprodcueNodeTypeString(T,O)(NodeType type, ref O output) @safe {
+void reproduceNodeTypeString(T,O)(NodeType type, ref O output) @safe {
 	void toT(string s, ref O output) @trusted {
 		foreach(it; s) {
 			output.put(to!T(it));
@@ -121,6 +121,29 @@ void reprodcueNodeTypeString(T,O)(NodeType type, ref O output) @safe {
 		case NodeType.Comment: toT("<!--", output); break;
 		case NodeType.Notation: toT("<!NOTATION", output); break;
 		case NodeType.Prolog: toT("<?xml", output); break;
+	}
+}
+
+@safe unittest {
+	foreach(T; TypeTuple!(string,wstring,dstring)) {
+		foreach(it; __traits(allMembers, NodeType)) {
+			NodeType node = __traits(getMember, NodeType, it);
+			auto app = appender!T();
+			static assert(isOutputRange!(typeof(app),T));
+			reproduceNodeTypeString!T(node, app);
+
+			if(node == NodeType.Unknown) {
+				assert(app.data == "Unknown");
+			} else if(node == NodeType.Text) {
+				assert(app.data == "Text");
+			} else if(node == NodeType.Element) {
+				assert(app.data == "Element");
+			} else if(node == NodeType.EndTag) {
+				assert(app.data[0] == '>');
+			} else {
+				assert(app.data[0] == '<');
+			}
+		}
 	}
 }
 
@@ -313,15 +336,18 @@ struct Lexer(Input,
 
 		if(this.input.front == '[') {
 			this.testAndEatPrefix('[');
-			while(!this.input.empty && this.input.front != '>') {
+			while(!this.input.empty && this.input.front != ']') {
+				this.eatWhitespace();
 				Node tmp;
 				ubyte[__traits(classInstanceSize, XMLException)] exception;
 				bool didNotWork;
 				this.frontImpl(&tmp, didNotWork, exception);
 
-				//reprodcueNodeTypeString!(ElementType!Input)
-				//	(tmp.nodeType, app);
+				reproduceNodeTypeString!(ElementType!Input)(tmp.nodeType, app);
 			}
+			assert(!this.input.empty);
+			this.testAndEatPrefix(']');
+			this.eatWhitespace();
 		}
 		
 		return app.data;
@@ -503,25 +529,6 @@ unittest { // eatWhitespace
 	}
 }
 
-unittest { // balancedEatUntil
-	const auto testStrs = [
-		"< < >>"
-	];	
-
-	foreach(T ; TestInputTypes) {
-		foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
-			foreach(testStrIt; testStrs) {
-				auto input = makeTestInputTypes!T(testStrIt);
-				auto lexer = Lexer!(T,P)(input);
-
-				//assert(lexer.testAndEatPrefix('<'));
-				//auto data = lexer.balancedEatBraces();
-				//assert(lexer.testAndEatPrefix('>'));
-			}
-		}
-	}
-}
-
 unittest {
 	import std.xml2.misc : toStringX;
 
@@ -545,7 +552,14 @@ unittest {
 		Prefix("<?Hello ?>", NodeType.ProcessingInstruction),
 		Prefix("<?xml ?>", NodeType.Prolog),
 		Prefix(">", NodeType.Unknown),
-		Prefix("Test", NodeType.Text)
+		Prefix("Test", NodeType.Text),
+		Prefix("<!ELEMENT root EMPTY>", NodeType.Element),
+		Prefix("<!ATTLIST root xml:lang CDATA #IMPLIED>",
+				NodeType.AttributeList),
+		Prefix("<!ENTITY utf16b SYSTEM \"../invalid/utf16b.xml\">",
+				NodeType.Unknown),
+		Prefix("<!ENTITY utf16l SYSTEM \"../invalid/utf16l.xml\"> ]>},",
+			NodeType.Unknown)
 	];
 
 	foreach(T ; TestInputTypes) {
@@ -565,6 +579,37 @@ unittest {
 					toStringX(lexer.input) ~ "|" ~ to!string(n.nodeType) ~ 
 					" " ~ to!string(it.type) ~ " '" ~ toStringX(n.input) ~ 
 					"' " ~ T.stringof);
+			}
+		}
+	}
+}
+
+unittest { // balancedEatUntil
+	const auto testStrs = [
+		q{<!DOCTYPE foo [
+		  <!ELEMENT foo (root*)>
+		  <!ELEMENT root EMPTY>
+		  <!ENTITY utf16b SYSTEM "../invalid/utf16b.xml">
+		  <!ENTITY utf16l SYSTEM "../invalid/utf16l.xml"> ]>},
+		"<!DOCTYPE root [ <!ATTLIST > ] >",
+		q{<!DOCTYPE root [
+		  <!ELEMENT root EMPTY>
+		  <!ATTLIST root xml:lang CDATA #IMPLIED> ]>},
+	];
+
+	foreach(T ; TestInputTypes) {
+		foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
+			foreach(testStrIt; testStrs) {
+				logf("%s %s %s", T.stringof, P.stringof, testStrIt);
+				auto input = makeTestInputTypes!T(testStrIt);
+				auto lexer = Lexer!(T,P)(input);
+
+				assert(lexer.testAndEatPrefix('<'));
+				assert(!lexer.input.empty);
+				auto data = lexer.balancedEatBraces();
+				assert(!lexer.input.empty);
+				assert(lexer.testAndEatPrefix('>'));
+				assert(lexer.empty);
 			}
 		}
 	}
