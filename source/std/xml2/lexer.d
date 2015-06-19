@@ -70,6 +70,7 @@ enum NodeType {
 	Unknown,
 	StartTag,
 	EndTag,
+	Entity,
 	EmptyTag,
 	CData,
 	Text,
@@ -88,6 +89,7 @@ void toString(NodeType type, void delegate(const(char)[]) @trusted output) @safe
 		case NodeType.StartTag: output("StartTag"); break;
 		case NodeType.EndTag: output("EndTag"); break;
 		case NodeType.EmptyTag: output("EmptyTag"); break;
+		case NodeType.Entity: output("Entity"); break;
 		case NodeType.CData: output("CData"); break;
 		case NodeType.Text: output("Text"); break;
 		case NodeType.AttributeList: output("AttributeList"); break;
@@ -113,6 +115,7 @@ void reproduceNodeTypeString(T,O)(NodeType type, ref O output) @safe {
 		case NodeType.EndTag: toT(">", output); break;
 		case NodeType.EmptyTag: toT("</", output); break;
 		case NodeType.CData: toT("<![CDATA[", output); break;
+		case NodeType.Entity: toT("<!ENTITY", output); break;
 		case NodeType.Text: toT("Text", output); break;
 		case NodeType.AttributeList: toT("<!ATTLIST", output); break;
 		case NodeType.ProcessingInstruction: toT("<?", output); break;
@@ -276,6 +279,8 @@ struct Lexer(Input,
 					return NodeType.AttributeList;
 				} else if(testAndEatPrefix("NOTATION")) {
 					return NodeType.Notation;
+				} else if(testAndEatPrefix("ENTITY")) {
+					return NodeType.Entity;
 				}
 			} else if(this.input.front == '?') {
 				this.popAndAdvance();
@@ -305,7 +310,28 @@ struct Lexer(Input,
 			auto ret = this.input[0 .. idx];
 
 			static if(TrackPosition.yes) {
-				//this.popAndAdvance(idx > 0 ? idx - 1 : 0);
+				this.popAndAdvance(idx);
+			} else {
+				this.input = this.input[idx .. $];
+			}
+
+			return ret;
+		}
+
+		Input parseEntity() {
+			import std.xml2.misc: indexOfX;
+
+			auto idx = indexOfX(this.input, '\'');
+			if(idx == -1) {
+				idx = 0;
+			} else {
+				idx = indexOfX(this.input, '\'', idx+1);
+			}
+			idx = indexOfX(this.input, '>', idx+1);
+
+			auto ret = this.input[0 .. idx];
+			
+			static if(TrackPosition.yes) {
 				this.popAndAdvance(idx);
 			} else {
 				this.input = this.input[idx .. $];
@@ -322,6 +348,39 @@ struct Lexer(Input,
 			}
 
 			return app.data;
+		}
+
+		auto parseEntity() {
+			auto app = appender!(ElementEncodingType!(Input)[])();
+			while(!this.input.empty && this.input.front != '>' 
+					&& this.input.front != '\'')
+			{
+				app.put(this.input.front);	
+				this.popAndAdvance();
+			}
+			
+			assert(!this.input.empty);
+
+			if(this.input.front == '>') {
+				return app.data;
+			} else {
+				app.put(this.input.front);
+				this.popAndAdvance();
+				while(!this.input.empty && this.input.front != '\'') {
+					app.put(this.input.front);	
+					this.popAndAdvance();
+				}
+
+				app.put(this.input.front);
+				this.popAndAdvance();
+
+				while(!this.input.empty && this.input.front != '>') {
+					app.put(this.input.front);	
+					this.popAndAdvance();
+				}
+
+				return app.data;
+			}
 		}
 	}
 
@@ -414,6 +473,10 @@ struct Lexer(Input,
 				this.testAndEatPrefix('>');
 				break;
 			}
+			case NodeType.Entity:
+				node.input = this.parseEntity();
+				this.testAndEatPrefix('>');
+				break;
 			case NodeType.EndTag:
 				goto case NodeType.StartTag;
 			case NodeType.EmptyTag:
@@ -557,9 +620,14 @@ unittest {
 		Prefix("<!ATTLIST root xml:lang CDATA #IMPLIED>",
 				NodeType.AttributeList),
 		Prefix("<!ENTITY utf16b SYSTEM \"../invalid/utf16b.xml\">",
-				NodeType.Unknown),
+				NodeType.Entity),
 		Prefix("<!ENTITY utf16l SYSTEM \"../invalid/utf16l.xml\"> ]>},",
-			NodeType.Unknown)
+			NodeType.Entity),
+		Prefix("<!ELEMENT foo (root*)>", NodeType.Element),
+		Prefix("<!ELEMENT root EMPTY>", NodeType.Element),
+		Prefix("<!ENTITY % zz '&#60;!ENTITY tricky \"error-prone\" >' >",
+			NodeType.Entity),
+		Prefix("<!ENTITY % xx '&#37;zz;'>", NodeType.Entity)
 	];
 
 	foreach(T ; TestInputTypes) {
@@ -591,7 +659,6 @@ unittest { // balancedEatUntil
 		  <!ELEMENT root EMPTY>
 		  <!ENTITY utf16b SYSTEM "../invalid/utf16b.xml">
 		  <!ENTITY utf16l SYSTEM "../invalid/utf16l.xml"> ]>},
-		"<!DOCTYPE root [ <!ATTLIST > ] >",
 		q{<!DOCTYPE root [
 		  <!ELEMENT root EMPTY>
 		  <!ATTLIST root xml:lang CDATA #IMPLIED> ]>},
@@ -600,7 +667,7 @@ unittest { // balancedEatUntil
 	foreach(T ; TestInputTypes) {
 		foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
 			foreach(testStrIt; testStrs) {
-				logf("%s %s %s", T.stringof, P.stringof, testStrIt);
+				//logf("%s %s %s", T.stringof, P.stringof, testStrIt);
 				auto input = makeTestInputTypes!T(testStrIt);
 				auto lexer = Lexer!(T,P)(input);
 

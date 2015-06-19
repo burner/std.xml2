@@ -1,19 +1,32 @@
 module std.xml2.misc;
+import std.traits : isSomeString, isIntegral;
+import std.string : indexOf;
 
-ptrdiff_t indexOfX(C1,C2)(C1 c1, C2 c2) {
-	import std.traits : isSomeString;
+ptrdiff_t indexOfX(C1,C2,I)(C1 c1, C2 c2, I offset) 
+		if(isIntegral!I)
+{
 	static if(isSomeString!C1) {
-		static import std.string;
-		return std.string.indexOf(c1, c2);
+		return indexOf(c1, c2, offset);
 	} else {
-		return indexOfImpl(c1, c2);
+		return indexOfImpl(c1, c2, offset);
 	}
 }
 
-private ptrdiff_t indexOfImpl(C1,C2)(C1 c1, C2 c2) { // Only works for ascii
+ptrdiff_t indexOfX(C1,C2)(C1 c1, C2 c2) {
+	static if(isSomeString!C1) {
+		return indexOf(c1, c2);
+	} else {
+		return indexOfImpl(c1, c2, 0);
+	}
+}
+
+// Only works for ascii
+private ptrdiff_t indexOfImpl(C1,C2,I)(C1 c1, C2 c2, I i) {
 	import std.traits : isArray;
+	if(i < 0) {
+		return -1;
+	}
 	static if(isArray!C2) {
-		size_t i = 0;
 		outer: for(; i < c1.length; ++i) {
 			if(c1.length - i >= c2.length) {
 				foreach(jdx, jt; c2) {
@@ -36,6 +49,9 @@ private ptrdiff_t indexOfImpl(C1,C2)(C1 c1, C2 c2) { // Only works for ascii
 
 		immutable C a = cast(C)c2;
 		foreach(size_t idx, C it; c1) {
+			if(idx < i) {
+				continue;
+			}
 			if(it == a) {
 				return idx;
 			}
