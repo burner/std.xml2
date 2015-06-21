@@ -344,6 +344,7 @@ struct Lexer(Input,
 			size_t idx = 0;
 			int cnt = 1;
 			int state = 0;
+			Input ret;
 			while(idx < this.input.length) {
 				if(state == 0 && this.input[idx] == '>') {
 					--cnt;
@@ -362,9 +363,10 @@ struct Lexer(Input,
 					state = 0;
 				}
 				++idx;
+				ret = this.input[0 .. idx];
 			}
 
-			auto ret = this.input[0 .. idx];
+			ret = this.input[0 .. idx];
 			this.input = this.input[idx .. $];
 
 			return ret;
@@ -717,7 +719,7 @@ q{
 <!DOCTYPE doc
 [
 <!ELEMENT doc ANY>} ~
-"<!--NOTE: XML doesn't specify whether this is a choice or a seq-->" ~
+"\n<!--NOTE: XML doesn't specify whether this is a choice or a seq-->\n" ~
 q{<!ELEMENT a (doc?)>
 <!ELEMENT b (doc|a)>
 <!ELEMENT c (
