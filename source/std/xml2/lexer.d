@@ -339,6 +339,36 @@ struct Lexer(Input,
 
 			return ret;
 		}
+
+		Input balancedEatBraces() {
+			size_t idx = 0;
+			int cnt = 1;
+			int state = 0;
+			while(idx < this.input.length) {
+				if(state == 0 && this.input[idx] == '>') {
+					--cnt;
+					if(cnt == 0) {
+						break;
+					}
+				} else if(state == 0 && this.input[idx] == '<') {
+					++cnt;
+				} else if(state == 0 && this.input[idx] == '"') {
+					state = 2;
+				} else if(state == 2 && this.input[idx] == '"') {
+					state = 0;
+				} else if(state == 0 && this.input[idx] == '\'') {
+					state = 1;
+				} else if(state == 1 && this.input[idx] == '\'') {
+					state = 0;
+				}
+				++idx;
+			}
+
+			auto ret = this.input[0 .. idx];
+			this.input = this.input[idx .. $];
+
+			return ret;
+		}
 	} else {
 		auto eatUntil(T)(const T until) {
 			auto app = appender!(ElementEncodingType!(Input)[])();
@@ -382,34 +412,33 @@ struct Lexer(Input,
 				return app.data;
 			}
 		}
-	}
 
-	ElementEncodingType!(Input)[] balancedEatBraces() {
-		auto app = appender!(ElementEncodingType!(Input)[])();
-		while(!this.input.empty 
-				&& this.input.front != '[' && this.input.front != '>') 
-		{
-			app.put(this.input.front);
-			this.popAndAdvance();
-		}
-
-		if(this.input.front == '[') {
-			this.testAndEatPrefix('[');
-			while(!this.input.empty && this.input.front != ']') {
-				this.eatWhitespace();
-				Node tmp;
-				ubyte[__traits(classInstanceSize, XMLException)] exception;
-				bool didNotWork;
-				this.frontImpl(&tmp, didNotWork, exception);
-
-				reproduceNodeTypeString!(ElementType!Input)(tmp.nodeType, app);
+		auto balancedEatBraces() {
+			auto app = appender!(ElementEncodingType!(Input)[])();
+			int cnt = 1;
+			int state = 0;
+			while(!this.input.empty) {
+				if(state == 0 && this.input.front == '>') {
+					--cnt;
+					if(cnt == 0) {
+						break;
+					}
+				} else if(state == 0 && this.input.front == '"') {
+					state = 2;
+				} else if(state == 2 && this.input.front == '"') {
+					state = 0;
+				} else if(state == 0 && this.input.front == '<') {
+					++cnt;
+				} else if(state == 0 && this.input.front == '\'') {
+					state = 1;
+				} else if(state == 1 && this.input.front == '\'') {
+					state = 0;
+				}
+				app.put(this.input.front);
+				this.input.popFront();
 			}
-			assert(!this.input.empty);
-			this.testAndEatPrefix(']');
-			this.eatWhitespace();
+			return app.data;
 		}
-		
-		return app.data;
 	}
 
 	@property Node front() {
@@ -682,6 +711,65 @@ unittest { // balancedEatUntil
 	}
 }
 
+unittest { // balancedEatUntil
+	const auto testStrs = [
+q{
+<!DOCTYPE doc
+[
+<!ELEMENT doc ANY>} ~
+"<!--NOTE: XML doesn't specify whether this is a choice or a seq-->" ~
+q{<!ELEMENT a (doc?)>
+<!ELEMENT b (doc|a)>
+<!ELEMENT c (
+doc
+|
+a
+|
+c?
+)>
+]>
+},
+q{<!DOCTYPE doc
+[
+<!ELEMENT doc EMPTY>
+<!NOTATION not1 PUBLIC "a b
+cZ">} ~
+"<!NOTATION not2 PUBLIC '09-()+,./:=?;!*#@$_%'>" ~
+q{<!NOTATION not3 PUBLIC "09-()+,.'/:=?;!*#@$_%">
+]>},
+q{<!DOCTYPE doc
+[
+]>},
+q{<!DOCTYPE doc
+[
+<!ELEMENT doc EMPTY>
+]>},
+q{<!DOCTYPE doc
+[
+<!ELEMENT doc EMPTY>
+<!NOTATION not1 PUBLIC "a b
+cdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ">
+]>},
+q{<!DOCTYPE doc
+[
+<!ELEMENT doc EMPTY>
+<!NOTATION not1 PUBLIC "a b
+cdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ">} ~ 
+"<!NOTATION not2 PUBLIC '0123456789-()+,./:=?;!*#@$_%'>" ~
+"]>",
+	];
+			foreach(testStrIt; testStrs) {
+				auto lexer = Lexer!(string,TrackPosition.yes)(testStrIt);
+
+				assert(lexer.testAndEatPrefix('<'));
+				assert(!lexer.input.empty);
+				auto data = lexer.balancedEatBraces();
+				assert(!lexer.input.empty, data);
+				assert(lexer.testAndEatPrefix('>'));
+				assert(lexer.empty);
+			}
+}
+
 unittest {
 	import std.conv : to;
 
@@ -736,6 +824,17 @@ unittest {
 }
 
 unittest {
+	import std.file : readText;
+	auto s = readText("tests/oasis/p12pass1.xml");
+	auto lexer = Lexer!(string,TrackPosition.yes)(s);
+	while(!lexer.empty) {
+		auto f = lexer.front;
+		lexer.popFront();
+	}
+	assert(lexer.input.empty);
+}
+
+unittest {
 	import std.file : dirEntries, SpanMode, readText;
 	import std.stdio : writeln;
 	import std.path : extension;
@@ -757,9 +856,9 @@ unittest {
 			auto lexer = Lexer!(string,TrackPosition.yes)(s);
 			while(!lexer.empty) {
 				auto f = lexer.front;
-				//log(f);
 				lexer.popFront();
 			}
+			assert(lexer.input.empty);
 		} catch(UTFException e) {
 		} catch(Exception e) {
 			//log(name, e.toString());
