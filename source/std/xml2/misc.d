@@ -102,8 +102,8 @@ string toStringX(C)(C c) {
 			}
 		} else {
 			//static assert(false, C.stringof);
-			//return to!string(c);
-			return "";
+			return to!string(c);
+			//return "";
 		}
 	}
 }

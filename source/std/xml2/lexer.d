@@ -346,11 +346,27 @@ struct Lexer(Input,
 			int state = 0;
 			Input ret;
 			while(idx < this.input.length) {
+				if(this.input.length - idx > 3) {
+					import std.stdio : writeln;
+					/*writeln(this.input[idx .. idx+4], "%%", state, "%%",
+						this.input[idx .. idx+3] == "-->", "%%", cnt, "%%",
+						idx);*/
+				}
 				if(state == 0 && this.input[idx] == '>') {
 					--cnt;
 					if(cnt == 0) {
 						break;
 					}
+				} else if(state == 0 && this.input.length - idx > 3 && 
+						this.input[idx .. idx+4] == "<!--") 
+				{
+					state = 3;
+					idx += 3;
+				} else if(state == 3 && this.input.length - idx > 2 && 
+						this.input[idx .. idx+3] == "-->") 
+				{
+					state = 0;
+					idx += 2;
 				} else if(state == 0 && this.input[idx] == '<') {
 					++cnt;
 				} else if(state == 0 && this.input[idx] == '"') {
@@ -425,6 +441,18 @@ struct Lexer(Input,
 					if(cnt == 0) {
 						break;
 					}
+				} else if(testAndEatPrefix("<!--", false)) {
+					foreach(it; 0 .. 3) {
+						app.put(this.input.front);
+						this.input.popFront();
+					}
+					state = 3;
+				} else if(state == 3 && testAndEatPrefix("-->", false)) {
+					foreach(it; 0 .. 2) {
+						app.put(this.input.front);
+						this.input.popFront();
+					}
+					state = 0;
 				} else if(state == 0 && this.input.front == '"') {
 					state = 2;
 				} else if(state == 2 && this.input.front == '"') {
@@ -715,6 +743,15 @@ unittest { // balancedEatUntil
 
 unittest { // balancedEatUntil
 	const auto testStrs = [
+q{<!DOCTYPE doc
+[
+<!ELEMENT doc (#PCDATA)>
+<!ENTITY % pe "<!---->">
+%pe;<!---->%pe;
+]>},
+/*"<!DOCTYPE []>",
+"<!DT [ <!EL >]>",
+"<!DT [ <!EL > <!-- -->]>",
 q{
 <!DOCTYPE doc
 [
@@ -758,19 +795,30 @@ q{<!DOCTYPE doc
 <!NOTATION not1 PUBLIC "a b
 cdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ">} ~ 
 "<!NOTATION not2 PUBLIC '0123456789-()+,./:=?;!*#@$_%'>" ~
-"]>",
+"]>",*/
 	];
+	//foreach(T ; TestInputTypes) {
+	foreach(T ; TypeTuple!(string)) {
+		//pragma(msg, T);
+		foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
 			foreach(testStrIt; testStrs) {
-				auto lexer = Lexer!(string,TrackPosition.yes)(testStrIt);
+				auto testStr = makeTestInputTypes!T(testStrIt);
+				auto lexer = Lexer!(T,P)(testStr);
 
 				assert(lexer.testAndEatPrefix('<'));
 				assert(!lexer.input.empty);
 				auto data = lexer.balancedEatBraces();
-				assert(!lexer.input.empty, data);
+				assert(!lexer.input.empty, toStringX(data));
 				assert(lexer.testAndEatPrefix('>'));
-				assert(lexer.empty);
+				lexer.eatWhitespace();
+				assert(lexer.empty, T.stringof ~ " \"" ~ 
+					toStringX(lexer.input) ~ "\"");
 			}
+		}
+	}
 }
+
+//__EOF__
 
 unittest {
 	import std.conv : to;
