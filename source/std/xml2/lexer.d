@@ -2,6 +2,7 @@ module std.xml2.lexer;
 
 import std.xml2.testing;
 import std.xml2.misc : toStringX;
+import std.xml2.exceptions;
 
 import std.array : empty, back, appender, Appender;
 import std.conv : to;
@@ -9,6 +10,7 @@ import std.typecons : Flag;
 import std.range.primitives : ElementEncodingType, ElementType, hasSlicing,
 	isInputRange, isOutputRange;
 import std.traits : isArray, isSomeString;
+import std.stdio;
 
 version(unittest) {
 	import std.experimental.logger;
@@ -20,14 +22,10 @@ alias TrackPosition = Flag!"TrackPosition";
 alias KeepComments = Flag!"KeepComments";
 alias EagerAttributeParse = Flag!"EagerAttributeParse";
 
-class XMLException : Exception {
-	this(string msg, string file = __FILE__, int line = __LINE__) {
-		super(msg, file, line);
-	}
-
-	this(XMLException old) {
-		super(old.msg, old.file, old.line);
-	}
+enum ErrorHandling {
+	exceptions,
+	asserts,
+	ignore
 }
 
 struct SourcePosition(TrackPosition track) {
@@ -153,6 +151,7 @@ void reproduceNodeTypeString(T,O)(NodeType type, ref O output) @safe {
 struct Lexer(Input, 
 	TrackPosition trackPosition = TrackPosition.yes,
 	KeepComments keepComments = KeepComments.yes,
+	ErrorHandling errorHandling = ErrorHandling.exceptions,
 	EagerAttributeParse eagerAttributeParse = EagerAttributeParse.no
 ) {
 
@@ -436,12 +435,13 @@ struct Lexer(Input,
 			int cnt = 1;
 			int state = 0;
 			while(!this.input.empty) {
+				//writeln(this.input.getBuffer(), " || ", state, '\n');
 				if(state == 0 && this.input.front == '>') {
 					--cnt;
 					if(cnt == 0) {
 						break;
 					}
-				} else if(testAndEatPrefix("<!--", false)) {
+				} else if(state == 0 && testAndEatPrefix("<!--", false)) {
 					foreach(it; 0 .. 3) {
 						app.put(this.input.front);
 						this.input.popFront();
@@ -749,7 +749,7 @@ q{<!DOCTYPE doc
 <!ENTITY % pe "<!---->">
 %pe;<!---->%pe;
 ]>},
-/*"<!DOCTYPE []>",
+"<!DOCTYPE []>",
 "<!DT [ <!EL >]>",
 "<!DT [ <!EL > <!-- -->]>",
 q{
@@ -795,10 +795,10 @@ q{<!DOCTYPE doc
 <!NOTATION not1 PUBLIC "a b
 cdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ">} ~ 
 "<!NOTATION not2 PUBLIC '0123456789-()+,./:=?;!*#@$_%'>" ~
-"]>",*/
+"]>",
 	];
-	//foreach(T ; TestInputTypes) {
-	foreach(T ; TypeTuple!(string)) {
+	foreach(T ; TestInputTypes) {
+	//foreach(T ; TypeTuple!(CharInputRange!string)) {
 		//pragma(msg, T);
 		foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
 			foreach(testStrIt; testStrs) {
@@ -808,7 +808,8 @@ cdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ">} ~
 				assert(lexer.testAndEatPrefix('<'));
 				assert(!lexer.input.empty);
 				auto data = lexer.balancedEatBraces();
-				assert(!lexer.input.empty, toStringX(data));
+				assert(!lexer.input.empty, toStringX(data) ~ " " ~
+					T.stringof);
 				assert(lexer.testAndEatPrefix('>'));
 				lexer.eatWhitespace();
 				assert(lexer.empty, T.stringof ~ " \"" ~ 
@@ -817,8 +818,6 @@ cdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ">} ~
 		}
 	}
 }
-
-//__EOF__
 
 unittest {
 	import std.conv : to;
@@ -895,23 +894,30 @@ unittest {
 				&& a.indexOf("not") == -1
 				&& a.indexOf("invalid") == -1
 				&& a.indexOf("fail") == -1
+				&& a.indexOf("japa") == -1
 			)
 		)
 	{
 		import std.utf : UTFException;
 		log(name);
 
-		try {
-			auto s = readText(name);
-			auto lexer = Lexer!(string,TrackPosition.yes)(s);
-			while(!lexer.empty) {
-				auto f = lexer.front;
-				lexer.popFront();
+		auto s = readText(name);
+
+		foreach(T ; TestInputTypes) {
+			foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
+				try {
+					auto testStr = makeTestInputTypes!T(s);
+					auto lexer = Lexer!(T,P)(testStr);
+					while(!lexer.empty) {
+						auto f = lexer.front;
+						lexer.popFront();
+					}
+					assert(lexer.input.empty);
+				} catch(UTFException e) {
+				} catch(Exception e) {
+					//log(name, e.toString());
+				}
 			}
-			assert(lexer.input.empty);
-		} catch(UTFException e) {
-		} catch(Exception e) {
-			//log(name, e.toString());
 		}
 	}
 }
