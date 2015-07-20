@@ -617,6 +617,8 @@ struct Lexer(Input,
 	}
 }
 
+__EOF__
+
 unittest { // eatuntil
 	import std.algorithm.comparison : equal;
 	import std.format : format;
