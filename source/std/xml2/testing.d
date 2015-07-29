@@ -427,3 +427,32 @@ unittest {
 	assert(g.empty, to!string(rslt.length));
 	assert(g.empty);
 }
+
+unittest {
+	auto g = new XmlGenOr([
+		new XmlGenLiteral("A"),
+		new XmlGenOr([
+			new XmlGenStar(new XmlGenLiteral("B"), 1, 3),
+			new XmlGenOr([
+				new XmlGenLiteral("C"),
+				new XmlGenLiteral("D")
+			])
+		])
+	]);
+
+	string[] rslt = [ "A", "B", "BB", "D", "C" ];
+
+	XmlGenRnd r;
+
+	g.setRnd(&r);
+
+	while(!g.empty) {
+		auto s = g.front();
+		g.popFront();
+		assert(s == rslt.front, s ~ "|" ~ rslt.front);
+		rslt = rslt[1 .. $];
+	}
+
+	assert(g.empty, to!string(rslt.length));
+	assert(g.empty);
+}
