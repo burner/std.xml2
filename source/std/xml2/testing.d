@@ -1,6 +1,7 @@
 module std.xml2.testing;
 
 import std.array : empty, front, popFront, appender, Appender;
+import std.conv : to;
 import std.typecons : TypeTuple;
 import std.range.primitives : ElementType, ElementEncodingType;
 import std.random : Random, uniform;
@@ -62,9 +63,42 @@ T makeTestInputTypes(T,S)(S s) {
 alias XmlGenOut = Appender!string;
 alias XmlGenRnd = Random;
 
+pure @safe bool hasState(XmlGen o) {
+	foreach(T; TypeTuple!(XmlGenSeq,XmlGenStar,XmlGenOr)) {
+		auto a = cast(T)o;
+		if(a !is null) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+unittest {
+	XmlGen x = new XmlGenSeq([
+		new XmlGenString()
+	]);
+
+	assert(hasState(x));
+
+	x = new XmlGenStar(
+		new XmlGenLiteral("A"), 1, 2
+	);
+
+	assert(hasState(x));
+}
+
 abstract class XmlGen {
-	bool gen(ref XmlGenOut, ref XmlGenRnd);
+	void setRnd(XmlGenRnd* rnd) {
+		this.rnd = rnd;
+	}
+
 	void popFront() {}
+	bool empty() @property;
+	string front() @property;
+	void reset();
+
+	XmlGenRnd* rnd;
 }
 
 class XmlGenSeq : XmlGen {
@@ -72,47 +106,115 @@ class XmlGenSeq : XmlGen {
 		this.seq = seq;
 	}
 
-	override bool gen(ref XmlGenOut o, ref XmlGenRnd r) {
-		bool ret = false;
-		for(size_t i = 0; i < this.seq.length; ++i) {
-			auto t = this.seq[i].gen(o, r);
-			ret = ret || t;
+	override void setRnd(XmlGenRnd* rnd) {
+		foreach(it; this.seq) {
+			it.setRnd(rnd);
 		}
 
-		return ret;
+		this.rnd = rnd;
+	}
+
+	override string front() @property {
+		auto app = appender!string();
+		foreach(it; this.seq) {
+			app.put(it.front);
+		}
+
+		return app.data;
 	}
 
 	override void popFront() {
+		long i = this.seq.length - 1 ;
+		for(; i <= 0; --i) {
+			if(hasState(this.seq[i]) && !this.seq[i].empty) {
+				this.seq[i].popFront();
+				break;
+			}
+		}
 
+		foreach(it; this.seq[i + 1 .. $]) {
+			it.reset();
+		}
+	}
+
+	override bool empty() @property {
+		foreach(it; this.seq) {
+			if(hasState(it) && !it.empty) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	override void reset() @property {
+		foreach(it; this.seq) {
+			it.reset();
+		}
 	}
 
 	XmlGen[] seq;
 }
 
+class XmlGenString : XmlGen {
+	static this() {
+		XmlGenString.chars =
+			"0123456789abcdefghijklmopqrstuvxyzABCDEFGHIJKLMOPQRSTUVXYZ";
+	}
+
+	override string front() @property {
+		auto app = appender!string();
+		for(int i = 3; i < 10; ++i) {
+			app.put(XmlGenString.chars[uniform(0, XmlGenString.chars.length,
+				*this.rnd)]
+			);
+		}
+
+		return app.data;
+	}
+
+	override bool empty() @property {
+		return false;
+	}
+
+	override void popFront() {}
+	override void reset() {}
+
+	static string chars;
+}
+
+class XmlGenLiteral : XmlGen {
+	this(string lit) {
+		this.lit = lit;
+	}
+
+	override string front() @property {
+		return lit;
+	}
+
+	override bool empty() @property {
+		return false;
+	}
+
+	override void popFront() {}
+	override void reset() {}
+
+	string lit;
+}
+
 unittest {
+	XmlGenRnd r;
 	auto g = new XmlGenSeq([
 		new XmlGenLiteral("A"),
 		new XmlGenLiteral("B"),
-		new XmlGenStar(
-			new XmlGenLiteral("C"),
-			0,4
-		)
 	]);
+	g.setRnd(&r);
 
-	string[] rslt = [ "AB", "ABC", "ABCC", "ABCCC"];
-	size_t rsltIdx = 0;
-
-	auto app = appender!string();
-	XmlGenRnd r;
-
-	g.gen(app,r);
-	do {
-		assert(app.data == rslt[rsltIdx], app.data ~ " |" ~ rslt[rsltIdx]
-			~ "|");
-		++rsltIdx;
-		app = appender!string();
-	} while(g.gen(app,r));
-	assert(rsltIdx == rslt.length);
+	for(int i = 0; i < 10; ++i) {
+		auto s = g.front;
+		assert(s == "AB", s);
+		g.popFront();
+	}
 }
 
 class XmlGenStar : XmlGen {
@@ -125,27 +227,84 @@ class XmlGenStar : XmlGen {
 		this.i = this.low;
 	}
 
-	override bool gen(ref XmlGenOut o, ref XmlGenRnd r) {
-		bool ret = false;
+	override string front() @property {
+		auto app = appender!string();
 		for(size_t k = 0; k < this.i; ++k) {
-			auto t = this.obj.gen(o, r);	
-			ret = ret || t;
+			app.put(this.obj.front);
 		}
 
-		return ret;
+		return app.data;
+	}
+
+	override bool empty() @property {
+		if(hasState(this.obj)) {
+			bool ret = this.obj.empty;
+			if(ret) {
+				if(this.i < this.high) {
+					ret = false;
+				}
+			}
+			return ret;
+		} else {
+			if(this.i < this.high) {
+				return false;
+			} else {
+				return true;
+			}
+		}
+
 	}
 
 	override void popFront() {
-		++this.i;
-		if(this.i >= this.high) {
-			this.i = low;
+		if(hasState(this.obj)) {
+			bool em = this.obj.empty;
+			if(em) {
+				if(this.i < this.high) {
+					++this.i;
+					this.obj.reset();
+				}
+			} else {
+				this.obj.popFront();
+			}
+		} else {
+			if(this.i < this.high) {
+				++this.i;
+				this.obj.reset();
+			}
 		}
+	}
+
+	override void reset() {
+		this.i = this.low;
 	}
 
 	XmlGen obj;
 	size_t low;
 	size_t high;
 	size_t i;
+}
+
+unittest {
+	auto g = new XmlGenStar(
+		new XmlGenLiteral("A"), 0, 4
+	);
+
+	string[] rslt = [ "", "A", "AA", "AAA" ];
+
+	XmlGenRnd r;
+
+	g.setRnd(&r);
+
+	while(!g.empty) {
+		auto s = g.front();
+		g.popFront();
+		assert(s == rslt.front, s ~ "|" ~ rslt.front);
+		rslt = rslt[1 .. $];
+	}
+
+	assert(rslt.empty, to!string(rslt.length) ~ " " ~ 
+		to!string(rslt));
+	assert(g.empty);
 }
 
 class XmlGenOr : XmlGen {
@@ -155,12 +314,41 @@ class XmlGenOr : XmlGen {
 		this.i = 0;
 	}
 
-	override bool gen(ref XmlGenOut o, ref XmlGenRnd r) {
-		return this.sel[i].gen(o, r);
+	override string front() @property {
+		return this.sel[i].front;
+	}
+
+	override bool empty() @property {
+		if(this.i < this.sel.length && 
+				hasState(this.sel[this.i]) && !this.sel[this.i].empty) 
+		{
+			return false;
+		} else {
+			return this.i >= this.sel.length;
+		}
 	}
 
 	override void popFront() {
-		this.i = (this.i + i) % this.sel.length;
+		loop: while(this.i < this.sel.length) {
+			if(hasState(this.sel[this.i]) && !this.sel[this.i].empty) {
+				this.sel[this.i].popFront();	
+				if(this.sel[this.i].empty) {
+					++this.i;
+				} else {
+					break loop;
+				}
+			} else {
+				++this.i;
+				break loop;
+			}
+		}
+	}
+
+	override void reset() {
+		this.i = 0;
+		foreach(it; this.sel) {
+			it.reset();
+		}
 	}
 
 	XmlGen[] sel;
@@ -168,76 +356,74 @@ class XmlGenOr : XmlGen {
 }
 
 unittest {
-	auto app = appender!string();
-	XmlGenRnd r;
-
 	auto g = new XmlGenOr([
 		new XmlGenLiteral("A"),
-		new XmlGenLiteral("B")
+		new XmlGenLiteral("B"),
+		new XmlGenLiteral("C")
 	]);
 
-	string[] rslt = [ "A", "B" ];
-	size_t rsltIdx = 0;
+	string[] rslt = [ "A", "B", "C" ];
 
-	bool b = g.gen(app,r);
-	do {
-		assert(rslt[rsltIdx++] == app.data);
-		app = appender!string();
-	} while(g.gen(app,r));
-	assert(rsltIdx == rslt.length);
+	XmlGenRnd r;
+
+	g.setRnd(&r);
+
+	while(!g.empty) {
+		auto s = g.front();
+		g.popFront();
+		assert(s == rslt.front, s ~ "|" ~ rslt.front);
+		rslt = rslt[1 .. $];
+	}
+
+	assert(g.empty);
+	assert(rslt.empty, to!string(rslt.length));
 }
 
 unittest {
-	auto app = appender!string();
-	XmlGenRnd r;
-
-	auto g = new XmlGenSeq([
+	auto g = new XmlGenOr([
 		new XmlGenLiteral("A"),
-		new XmlGenOr([
-			new XmlGenLiteral("B"),
-			new XmlGenStar(
-				new XmlGenLiteral("C"),
-				1,3
-			)
-		]),
-		new XmlGenOr([
-			new XmlGenLiteral("D"),
-			new XmlGenLiteral("E"),
-		]),
+		new XmlGenStar(new XmlGenLiteral("B"), 1, 3)
 	]);
 
-	bool b = g.gen(app,r);
-	do {
-		log(app.data);
-		app = appender!string();
-	} while(g.gen(app,r));
+	string[] rslt = [ "A", "B", "BB" ];
+
+	XmlGenRnd r;
+
+	g.setRnd(&r);
+
+	while(!g.empty) {
+		auto s = g.front();
+		g.popFront();
+		assert(s == rslt.front, s ~ "|" ~ rslt.front);
+		rslt = rslt[1 .. $];
+	}
+
+	assert(g.empty, to!string(rslt.length));
+	assert(g.empty);
 }
 
-class XmlGenLiteral : XmlGen {
-	this(string lit) {
-		this.lit = lit;
+unittest {
+	auto g = new XmlGenOr([
+		new XmlGenLiteral("A"),
+		new XmlGenOr([
+			new XmlGenStar(new XmlGenLiteral("B"), 1, 3),
+			new XmlGenLiteral("C")
+		])
+	]);
+
+	string[] rslt = [ "A", "B", "BB", "C" ];
+
+	XmlGenRnd r;
+
+	g.setRnd(&r);
+
+	while(!g.empty) {
+		auto s = g.front();
+		g.popFront();
+		assert(s == rslt.front, s ~ "|" ~ rslt.front);
+		rslt = rslt[1 .. $];
 	}
 
-	override bool gen(ref XmlGenOut o, ref XmlGenRnd r) {
-		o.put(this.lit);
-		return false;
-	}
-
-	string lit;
-}
-
-class XmlGenString : XmlGen {
-	static this() {
-		XmlGenString.chars =
-			"0123456789abcdefghijklmopqrstuvxyzABCDEFGHIJKLMOPQRSTUVXYZ";
-	}
-
-	override bool gen(ref XmlGenOut o, ref XmlGenRnd r) {
-		for(int i = 3; i < 10; ++i) {
-			o.put(XmlGenString.chars[uniform(0, XmlGenString.chars.length, r)]);
-		}
-		return false;
-	}
-
-	static string chars;
+	assert(g.empty, to!string(rslt.length));
+	assert(g.empty);
 }
