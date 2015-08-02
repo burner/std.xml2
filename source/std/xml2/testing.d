@@ -240,9 +240,9 @@ class XmlGenStar : XmlGen {
 		if(hasState(this.obj)) {
 			bool ret = this.obj.empty;
 			if(ret) {
-				if(this.i < this.high) {
-					ret = false;
-				}
+				ret = this.i >= this.high;
+			} else {
+				ret = this.i >= this.high;
 			}
 			return ret;
 		} else {
@@ -252,30 +252,25 @@ class XmlGenStar : XmlGen {
 				return true;
 			}
 		}
-
 	}
 
 	override void popFront() {
 		if(hasState(this.obj)) {
+			this.obj.popFront();
 			bool em = this.obj.empty;
 			if(em) {
-				if(this.i < this.high) {
-					++this.i;
-					this.obj.reset();
-				}
-			} else {
-				this.obj.popFront();
-			}
-		} else {
-			if(this.i < this.high) {
 				++this.i;
 				this.obj.reset();
 			}
+		} else {
+			++this.i;
+			this.obj.reset();
 		}
 	}
 
 	override void reset() {
 		this.i = this.low;
+		this.obj.reset();
 	}
 
 	XmlGen obj;
@@ -312,6 +307,7 @@ class XmlGenOr : XmlGen {
 		assert(!sel.empty);
 		this.sel = sel;
 		this.i = 0;
+		this.isEmpty = false;
 	}
 
 	override string front() @property {
@@ -319,28 +315,21 @@ class XmlGenOr : XmlGen {
 	}
 
 	override bool empty() @property {
-		if(this.i < this.sel.length && 
-				hasState(this.sel[this.i]) && !this.sel[this.i].empty) 
-		{
-			return false;
-		} else {
-			return this.i >= this.sel.length;
-		}
+		return this.isEmpty;
 	}
 
 	override void popFront() {
-		loop: while(this.i < this.sel.length) {
-			if(hasState(this.sel[this.i]) && !this.sel[this.i].empty) {
-				this.sel[this.i].popFront();	
-				if(this.sel[this.i].empty) {
-					++this.i;
-				} else {
-					break loop;
-				}
-			} else {
+		if(hasState(this.sel[this.i]) && !this.sel[this.i].empty) {
+			this.sel[this.i].popFront();
+			if(this.sel[this.i].empty) {
 				++this.i;
-				break loop;
+				this.isEmpty = this.i == this.sel.length;
+			} else {
+				this.isEmpty = false;
 			}
+		} else {
+			++this.i;
+			this.isEmpty = this.i == this.sel.length;
 		}
 	}
 
@@ -349,10 +338,12 @@ class XmlGenOr : XmlGen {
 		foreach(it; this.sel) {
 			it.reset();
 		}
+		this.isEmpty = false;
 	}
 
 	XmlGen[] sel;
 	size_t i;
+	bool isEmpty;
 }
 
 unittest {
@@ -432,15 +423,13 @@ unittest {
 	auto g = new XmlGenOr([
 		new XmlGenLiteral("A"),
 		new XmlGenOr([
-			new XmlGenStar(new XmlGenLiteral("B"), 1, 3),
-			new XmlGenOr([
-				new XmlGenLiteral("C"),
-				new XmlGenLiteral("D")
-			])
-		])
+			new XmlGenLiteral("C"),
+			new XmlGenLiteral("D")
+		]),
+		new XmlGenLiteral("B")
 	]);
 
-	string[] rslt = [ "A", "B", "BB", "D", "C" ];
+	string[] rslt = [ "A", "C", "D", "B"];
 
 	XmlGenRnd r;
 
@@ -450,6 +439,93 @@ unittest {
 		auto s = g.front();
 		g.popFront();
 		assert(s == rslt.front, s ~ "|" ~ rslt.front);
+		rslt = rslt[1 .. $];
+	}
+
+	assert(g.empty, to!string(rslt.length));
+	assert(g.empty);
+}
+
+unittest {
+	auto g = new XmlGenOr([
+		new XmlGenLiteral("A"),
+		new XmlGenOr([
+			new XmlGenStar(new XmlGenLiteral("B"), 1, 3),
+			new XmlGenOr([
+				new XmlGenLiteral("C"),
+				new XmlGenLiteral("D")
+			])
+		])
+	]);
+
+	string[] rslt = [ "A", "B", "BB", "C", "D" ];
+
+	XmlGenRnd r;
+
+	g.setRnd(&r);
+
+	while(!g.empty) {
+		auto s = g.front();
+		g.popFront();
+		assert(s == rslt.front, s ~ "|" ~ rslt.front);
+		rslt = rslt[1 .. $];
+	}
+
+	assert(g.empty, to!string(rslt.length));
+	assert(g.empty);
+}
+
+unittest {
+	auto g = new XmlGenOr([
+		new XmlGenStar(
+			new XmlGenOr([
+				new XmlGenLiteral("A"),
+				new XmlGenLiteral("B")
+			]), 
+			1, 3
+		),
+		new XmlGenLiteral("C")
+	]);
+
+	string[] rslt = [ "A", "B", "AA", "BB", "C" ];
+
+	XmlGenRnd r;
+
+	g.setRnd(&r);
+
+	while(!g.empty) {
+		auto s = g.front();
+		//log(s);
+		g.popFront();
+		assert(s == rslt.front, s ~ " != " ~ rslt.front);
+		rslt = rslt[1 .. $];
+	}
+
+	assert(g.empty, to!string(rslt.length));
+	assert(g.empty);
+}
+
+unittest {
+	auto g = new XmlGenStar(
+		new XmlGenOr([
+			new XmlGenStar(
+				new XmlGenLiteral("A"), 1, 3
+			),
+			new XmlGenLiteral("B")
+		]), 
+		1, 3
+	);
+
+	string[] rslt = [ "A", "AA", "B", "AA", "AAAA", "BB" ];
+
+	XmlGenRnd r;
+
+	g.setRnd(&r);
+
+	while(!g.empty) {
+		auto s = g.front();
+		g.popFront();
+		assert(s == rslt.front, s ~ " != " ~ rslt.front);
 		rslt = rslt[1 .. $];
 	}
 
