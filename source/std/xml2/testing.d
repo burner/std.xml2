@@ -60,7 +60,6 @@ T makeTestInputTypes(T,S)(S s) {
 	}
 }
 
-alias XmlGenOut = Appender!string;
 alias XmlGenRnd = Random;
 
 pure @safe bool hasState(XmlGen o) {
@@ -97,6 +96,7 @@ abstract class XmlGen {
 	bool empty() @property;
 	string front() @property;
 	void reset();
+	XmlGen save() @property;
 
 	XmlGenRnd* rnd;
 }
@@ -104,6 +104,12 @@ abstract class XmlGen {
 class XmlGenSeq : XmlGen {
 	this(XmlGen[] seq) {
 		this.seq = seq;
+		this.i = this.seq.length - 1;
+		for(; this.i != -1; --this.i) {
+			if(hasState(this.seq[this.i])) {
+				break;
+			}
+		}
 	}
 
 	override void setRnd(XmlGenRnd* rnd) {
@@ -124,26 +130,32 @@ class XmlGenSeq : XmlGen {
 	}
 
 	override void popFront() {
-		long i = this.seq.length - 1 ;
-		for(; i <= 0; --i) {
-			if(hasState(this.seq[i]) && !this.seq[i].empty) {
-				this.seq[i].popFront();
-				break;
+		for(long j = this.seq.length - 1; j != -1; --j) {
+			if(hasState(this.seq[j])) {
+				if(!this.seq[j].empty) {
+					this.seq[j].popFront();
+					if(this.seq[j].empty) {
+						continue;
+					}
+					for(long k = j + 1; k < this.seq.length; ++k) {
+						this.seq[k].reset();
+					}
+					break;
+				}
 			}
-		}
-
-		foreach(it; this.seq[i + 1 .. $]) {
-			it.reset();
 		}
 	}
 
 	override bool empty() @property {
-		foreach(it; this.seq) {
-			if(hasState(it) && !it.empty) {
-				return false;
+		for(long j = 0; j < this.seq.length; ++j) {
+			if(hasState(this.seq[j])) {
+				if(!this.seq[j].empty) {
+					return false;
+				} else {
+					return true;
+				}
 			}
 		}
-
 		return true;
 	}
 
@@ -153,7 +165,92 @@ class XmlGenSeq : XmlGen {
 		}
 	}
 
+	override XmlGen save() @property {
+		XmlGen[] da = new XmlGen[this.seq.length];
+		foreach(idx, it; this.seq) {
+			da[idx] = it.save;
+		}
+
+		return new XmlGenSeq(da);
+	}
+
 	XmlGen[] seq;
+	long i;
+}
+
+class XmlGenChar : XmlGen {
+	static this() {
+		XmlGenChar.chars =
+			"0123456789abcdefghijklmopqrstuvxyzABCDEFGHIJKLMOPQRSTUVXYZ-'()+," ~
+			"./:=?;!*#@$_%]";
+	}
+
+	this(string ex = "") {
+		this.exclude = ex;
+		this.popFront();
+	}
+
+	override void popFront() {
+		import std.string : indexOf;
+
+		while(true) {
+			auto c = XmlGenChar.chars[uniform(0, XmlGenChar.chars.length)];
+			if(this.exclude.indexOf(c) == -1) {
+				auto app = appender!string();
+				app.put(c);
+				this.frontValue = app.data;
+				break;
+			}
+		}
+	}
+
+	override string front() @property {
+		return this.frontValue;
+	}
+
+	override bool empty() @property {
+		return false;
+	}
+
+	override XmlGen save() @property {
+		return new XmlGenChar(this.exclude);
+	}
+
+	override void reset() {}
+
+	static string chars;
+
+	string frontValue;
+	string exclude;
+}
+
+class XmlGenCharRange : XmlGen {
+	this(dchar be, dchar en) {
+		this.be = be;
+		this.en = en;
+	}
+
+	dchar be;
+	dchar en;
+
+	override bool empty() @property {
+		return false;
+	}
+
+	override void popFront() {}
+
+	override string front() @property {
+		auto app = appender!string();
+		app.put(uniform(this.be, this.en));
+
+		return app.data;
+	}
+
+	override void reset() {}
+
+	override XmlGen save() @property {
+		return new XmlGenCharRange(this.be, this.en);
+	}
 }
 
 class XmlGenString : XmlGen {
@@ -162,25 +259,36 @@ class XmlGenString : XmlGen {
 			"0123456789abcdefghijklmopqrstuvxyzABCDEFGHIJKLMOPQRSTUVXYZ";
 	}
 
-	override string front() @property {
+	this() {
+		this.popFront();
+	}
+
+	override void popFront() {
 		auto app = appender!string();
 		for(int i = 3; i < 10; ++i) {
-			app.put(XmlGenString.chars[uniform(0, XmlGenString.chars.length,
-				*this.rnd)]
-			);
+			app.put(XmlGenString.chars[uniform(0, XmlGenString.chars.length)]);
 		}
 
-		return app.data;
+		this.frontValue = app.data;
+	}
+
+	override string front() @property {
+		return this.frontValue;
 	}
 
 	override bool empty() @property {
 		return false;
 	}
 
-	override void popFront() {}
 	override void reset() {}
 
+	override XmlGen save() @property {
+		return new XmlGenString();
+	}
+
 	static string chars;
+
+	string frontValue;
 }
 
 class XmlGenLiteral : XmlGen {
@@ -199,22 +307,40 @@ class XmlGenLiteral : XmlGen {
 	override void popFront() {}
 	override void reset() {}
 
+	override XmlGen save() @property {
+		return new XmlGenLiteral(this.lit);
+	}
+
 	string lit;
 }
 
 unittest {
-	XmlGenRnd r;
 	auto g = new XmlGenSeq([
-		new XmlGenLiteral("A"),
-		new XmlGenLiteral("B"),
+		new XmlGenOr([
+			new XmlGenLiteral("A"),
+			new XmlGenLiteral("B"),
+		]),
+		new XmlGenOr([
+			new XmlGenLiteral("C"),
+			new XmlGenLiteral("D"),
+		])
 	]);
-	g.setRnd(&r);
 
-	for(int i = 0; i < 10; ++i) {
-		auto s = g.front;
-		assert(s == "AB", s);
+	string[] rslt = [ "AC", "AD", "BC", "BD" ];
+
+	long i = 0;
+	while(!g.empty) {
+		auto s = g.front();
 		g.popFront();
+		assert(s == rslt.front, s ~ "!=" ~ rslt.front ~ " | " 
+			~ to!string(i));
+		rslt = rslt[1 .. $];
+		++i;
 	}
+
+	assert(rslt.empty, to!string(rslt.length) ~ " " ~ 
+		to!string(rslt));
+	assert(g.empty);
 }
 
 class XmlGenStar : XmlGen {
@@ -237,21 +363,7 @@ class XmlGenStar : XmlGen {
 	}
 
 	override bool empty() @property {
-		if(hasState(this.obj)) {
-			bool ret = this.obj.empty;
-			if(ret) {
-				ret = this.i >= this.high;
-			} else {
-				ret = this.i >= this.high;
-			}
-			return ret;
-		} else {
-			if(this.i < this.high) {
-				return false;
-			} else {
-				return true;
-			}
-		}
+		return this.i >= this.high;
 	}
 
 	override void popFront() {
@@ -273,6 +385,10 @@ class XmlGenStar : XmlGen {
 		this.obj.reset();
 	}
 
+	override XmlGen save() @property {
+		return new XmlGenStar(this.obj.save, this.low, this.high);
+	}
+
 	XmlGen obj;
 	size_t low;
 	size_t high;
@@ -285,10 +401,6 @@ unittest {
 	);
 
 	string[] rslt = [ "", "A", "AA", "AAA" ];
-
-	XmlGenRnd r;
-
-	g.setRnd(&r);
 
 	while(!g.empty) {
 		auto s = g.front();
@@ -334,11 +446,20 @@ class XmlGenOr : XmlGen {
 	}
 
 	override void reset() {
-		this.i = 0;
 		foreach(it; this.sel) {
 			it.reset();
 		}
 		this.isEmpty = false;
+		this.i = 0;
+	}
+
+	override XmlGen save() @property {
+		XmlGen[] da = new XmlGen[this.sel.length];
+		foreach(idx, it; this.sel) {
+			da[idx] = it.save;
+		}
+
+		return new XmlGenOr(da);
 	}
 
 	XmlGen[] sel;
@@ -355,10 +476,6 @@ unittest {
 
 	string[] rslt = [ "A", "B", "C" ];
 
-	XmlGenRnd r;
-
-	g.setRnd(&r);
-
 	while(!g.empty) {
 		auto s = g.front();
 		g.popFront();
@@ -366,8 +483,8 @@ unittest {
 		rslt = rslt[1 .. $];
 	}
 
-	assert(g.empty);
 	assert(rslt.empty, to!string(rslt.length));
+	assert(g.empty);
 }
 
 unittest {
@@ -378,10 +495,6 @@ unittest {
 
 	string[] rslt = [ "A", "B", "BB" ];
 
-	XmlGenRnd r;
-
-	g.setRnd(&r);
-
 	while(!g.empty) {
 		auto s = g.front();
 		g.popFront();
@@ -389,7 +502,7 @@ unittest {
 		rslt = rslt[1 .. $];
 	}
 
-	assert(g.empty, to!string(rslt.length));
+	assert(rslt.empty, to!string(rslt.length));
 	assert(g.empty);
 }
 
@@ -404,10 +517,6 @@ unittest {
 
 	string[] rslt = [ "A", "B", "BB", "C" ];
 
-	XmlGenRnd r;
-
-	g.setRnd(&r);
-
 	while(!g.empty) {
 		auto s = g.front();
 		g.popFront();
@@ -415,7 +524,7 @@ unittest {
 		rslt = rslt[1 .. $];
 	}
 
-	assert(g.empty, to!string(rslt.length));
+	assert(rslt.empty, to!string(rslt.length));
 	assert(g.empty);
 }
 
@@ -431,10 +540,6 @@ unittest {
 
 	string[] rslt = [ "A", "C", "D", "B"];
 
-	XmlGenRnd r;
-
-	g.setRnd(&r);
-
 	while(!g.empty) {
 		auto s = g.front();
 		g.popFront();
@@ -442,7 +547,7 @@ unittest {
 		rslt = rslt[1 .. $];
 	}
 
-	assert(g.empty, to!string(rslt.length));
+	assert(rslt.empty, to!string(rslt.length));
 	assert(g.empty);
 }
 
@@ -460,10 +565,6 @@ unittest {
 
 	string[] rslt = [ "A", "B", "BB", "C", "D" ];
 
-	XmlGenRnd r;
-
-	g.setRnd(&r);
-
 	while(!g.empty) {
 		auto s = g.front();
 		g.popFront();
@@ -471,7 +572,7 @@ unittest {
 		rslt = rslt[1 .. $];
 	}
 
-	assert(g.empty, to!string(rslt.length));
+	assert(rslt.empty, to!string(rslt.length));
 	assert(g.empty);
 }
 
@@ -489,19 +590,14 @@ unittest {
 
 	string[] rslt = [ "A", "B", "AA", "BB", "C" ];
 
-	XmlGenRnd r;
-
-	g.setRnd(&r);
-
 	while(!g.empty) {
 		auto s = g.front();
-		//log(s);
 		g.popFront();
 		assert(s == rslt.front, s ~ " != " ~ rslt.front);
 		rslt = rslt[1 .. $];
 	}
 
-	assert(g.empty, to!string(rslt.length));
+	assert(rslt.empty, to!string(rslt.length));
 	assert(g.empty);
 }
 
@@ -519,7 +615,6 @@ unittest {
 	string[] rslt = [ "A", "AA", "B", "AA", "AAAA", "BB" ];
 
 	XmlGenRnd r;
-
 	g.setRnd(&r);
 
 	while(!g.empty) {
@@ -529,6 +624,45 @@ unittest {
 		rslt = rslt[1 .. $];
 	}
 
-	assert(g.empty, to!string(rslt.length));
+	assert(rslt.empty, to!string(rslt.length));
+	assert(g.empty);
+}
+
+unittest {
+	auto g = new XmlGenSeq([
+		new XmlGenLiteral("A"),
+		new XmlGenOr([
+			new XmlGenLiteral("B"),
+			new XmlGenStar(
+				new XmlGenLiteral("C"), 1, 3
+			),
+			new XmlGenSeq([
+				new XmlGenLiteral("D"),
+				new XmlGenLiteral("E")
+			])
+		]),
+		new XmlGenSeq([
+			new XmlGenLiteral("F"),
+			new XmlGenOr([
+				new XmlGenLiteral("G"),
+				new XmlGenLiteral("H")
+			])
+		])
+	]);
+
+	string[] rslt = [ "ABFG", "ABFH","ACFG", "ACFH", "ACCFG", "ACCFH",
+		"ADEFG", "ADEFH"];
+
+	XmlGenRnd r;
+	g.setRnd(&r);
+
+	while(!g.empty) {
+		auto s = g.front();
+		g.popFront();
+		assert(s == rslt.front, s ~ " != " ~ rslt.front);
+		rslt = rslt[1 .. $];
+	}
+
+	assert(rslt.empty, to!string(rslt.length));
 	assert(g.empty);
 }

@@ -2,6 +2,7 @@ MKDIR_P = mkdir -p
 
 dub:
 	dmd -g source/*.d source/std/xml2/*.d -debug -cov -ofxml2 -unittest -wi
+	#dmd -g source/*.d source/std/xml2/*.d -debug -ofxml2 -unittest -wi
 	./xml2
 
 all: xmlgen
