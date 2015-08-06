@@ -52,23 +52,6 @@ class XmlGenGenerator {
 			]),
 		]);
 		
-		// [13] PubidChar ::= #x20 | #xD | #xA | [a-zA-Z0-9] | [-'()+,./:=?;!*#@$_%]
-		PubidChar = new XmlGenChar();
-		
-		// [12] PubidLiteral ::= '"' PubidChar* '"' | "'" (PubidChar - "'")* "'"
-		PubidLiteral = new XmlGenOr([
-			new XmlGenSeq([
-				new XmlGenLiteral("\""),
-				new XmlGenStar(PubidChar.save, 0, 3),
-				new XmlGenLiteral("\"")
-			]),
-			new XmlGenSeq([
-				new XmlGenLiteral("'"),
-				new XmlGenStar(new XmlGenChar("'"), 0, 3),
-				new XmlGenLiteral("'")
-			])
-		]);
-
 		// [25] Eq ::= S? '=' S?
 		Eq = new XmlGenSeq([ S.save, new XmlGenLiteral("="), S.save ]);
 
@@ -122,11 +105,87 @@ class XmlGenGenerator {
 			new XmlGenLiteral(";"),
 		]);
 
+		// [67] Reference ::= EntityRef | CharRef
+		Reference = new XmlGenOr([EntityRef.save, CharRef.save]);
+
 		// [69] PEReference ::= '%' Name ';'
 		PEReference = new XmlGenSeq([
 			new XmlGenLiteral("%"),
 			Name.save,
 			new XmlGenLiteral(";"),
+		]);
+
+		/* [ 9] EntityValue ::= '"' ([^%&"] | PEReference | Reference)* '"'
+							|  "'" ([^%&'] | PEReference | Reference)* "'"
+		*/
+		EntityValue = new XmlGenOr([
+			new XmlGenSeq([ 
+				new XmlGenLiteral("\""), 
+				new XmlGenStar(
+					new XmlGenOr([
+						new XmlGenChar("%&\""),
+						PEReference.save,
+						Reference.save
+					]) , 0, 3
+				),
+				new XmlGenLiteral("\""), 
+			]),
+			new XmlGenSeq([ 
+				new XmlGenLiteral("'"), 
+				new XmlGenStar(
+					new XmlGenOr([
+						new XmlGenChar("%&'"),
+						PEReference.save,
+						Reference.save
+					]) , 0, 3
+				),
+				new XmlGenLiteral("'"), 
+			])
+		]);
+
+		/* [10] AttValue ::= '"' ([^<&"] | Reference)* '"'
+						|  "'" ([^<&'] | Reference)* "'"
+		*/
+		AttValue = new XmlGenOr([
+			new XmlGenSeq([ 
+				new XmlGenLiteral("\""), 
+				new XmlGenStar(
+					new XmlGenOr([
+						new XmlGenChar("<&\""),
+						Reference.save
+					]) , 0, 3
+				),
+				new XmlGenLiteral("\""), 
+			]),
+			new XmlGenSeq([ 
+				new XmlGenLiteral("'"), 
+				new XmlGenStar(
+					new XmlGenOr([
+						new XmlGenChar("<&'"),
+						Reference.save
+					]) , 0, 3
+				),
+				new XmlGenLiteral("'"), 
+			])
+		]);
+
+		/* [13] PubidChar ::= #x20 | #xD | #xA | [a-zA-Z0-9] 
+						| [-'()+,./:=?;!*#@$_%]
+		*/
+		PubidChar = new XmlGenChar();
+
+		// [12] PubidLiteral ::= '"' PubidChar* '"' | "'" (PubidChar - "'")* "'"
+		PubidLiteral = new XmlGenOr([
+			new XmlGenSeq([ 
+				new XmlGenLiteral("\""), 
+				new XmlGenStar(PubidChar.save, 0, 3),
+				new XmlGenLiteral("\""), 
+			]),
+			new XmlGenSeq([ 
+				new XmlGenLiteral("'"), 
+				new XmlGenStar(new XmlGenChar("-"), 0, 3),
+				new XmlGenLiteral("'"), 
+			]),
 		]);
 
 		/* [75] ExternalID ::= 'SYSTEM' S SystemLiteral 
@@ -194,6 +253,43 @@ class XmlGenGenerator {
 			S.save, Name.save
 		]);
 
+		// [73] EntityDef ::= EntityValue | (ExternalID NDataDecl?)
+		EntityDef = new XmlGenOr([
+			EntityValue,
+			new XmlGenSeq([ExternalID.save, NDataDecl.save])
+		]);
+
+		// [74] PEDef ::= EntityValue | ExternalID
+		PEDef = new XmlGenOr([EntityValue.save, ExternalID.save]);
+
+		// [71] GEDecl ::= '<!ENTITY' S Name S EntityDef S? '>'
+		GEDecl = new XmlGenSeq([
+			new XmlGenLiteral("<!ENTITY"), S.save, Name.save, S.save,
+			EntityDef.save, S.save, new XmlGenLiteral(">")
+		]);
+
+		// [72] PEDecl ::= '<!ENTITY' S '%' S Name S PEDef S? '>'
+		PEDecl = new XmlGenSeq([
+			new XmlGenLiteral("<!ENTITY"), S.save, new XmlGenLiteral("%"), 
+			S.save, Name.save, S.save, PEDef.save, S.save, new XmlGenLiteral(">")
+		]);
+
+		// [65] Ignore ::= Char* - (Char* ('<![' | ']]>') Char*)
+		//Ignore = new XmlGenChar("
+
+		/* [64] ignoreSectContents ::= Ignore ('<![' ignoreSectContents ']]>' 
+			Ignore)*
+		*/
+
+		// [63]	ignoreSect ::= '<![' S? 'IGNORE' S? '[' ignoreSectContents* ']]>'
+
+		// [62] includeSect ::= '<![' S? 'INCLUDE' S? '[' extSubsetDecl ']]>'
+
+		// [61] conditionalSect ::= includeSect | ignoreSect
+
+		// [70] EntityDecl ::= GEDecl | PEDecl
+		EntityDecl = new XmlGenOr([GEDecl.save, PEDecl.save]);
+
 		// [77] TextDecl ::= '<?xml' VersionInfo? EncodingDecl S? '?>'
 		TextDecl = new XmlGenSeq([
 			new XmlGenLiteral("<?xml"), VersionInfo.save, EncodingDecl.save,
@@ -219,15 +315,28 @@ class XmlGenGenerator {
 	XmlGen NameStartChar; // 4
 	XmlGen NameChar; // 4a
 	XmlGen Name; // 5
+	XmlGen EntityValue; // 9
+	XmlGen AttValue; // 10
 	XmlGen SystemLiteral; // 11
 	XmlGen PubidLiteral; // 12
 	XmlGen PubidChar; // 13
-	XmlGen Eq; // 25
 	XmlGen VersionInfo; // 24
+	XmlGen Eq; // 25
 	XmlGen VersionNum; // 26
+	XmlGen conditionalSect; // 61
+	XmlGen includeSect; // 62
+	XmlGen ignoreSect; // 63
+	XmlGen ignoreSectContents; // 64
+	XmlGen Ignore; // 65
 	XmlGen CharRef; // 66
+	XmlGen Reference; // 67
 	XmlGen EntityRef; // 68
 	XmlGen PEReference; // 69
+	XmlGen EntityDecl; // 70
+	XmlGen GEDecl; // 71
+	XmlGen PEDecl; // 72
+	XmlGen EntityDef; // 73
+	XmlGen PEDef; // 74
 	XmlGen ExternalID; // 75
 	XmlGen NDataDecl; // 76
 	XmlGen TextDecl; // 77
@@ -239,8 +348,9 @@ class XmlGenGenerator {
 
 unittest {
 	auto x = new XmlGenGenerator();
-	while(!x.TextDecl.empty) {
-		//log(x.TextDecl.front);
-		x.TextDecl.popFront();
+	auto g = x.EntityValue;
+	while(!g.empty) {
+		log(g.front);
+		g.popFront();
 	}
 }
