@@ -275,17 +275,53 @@ class XmlGenGenerator {
 		]);
 
 		// [65] Ignore ::= Char* - (Char* ('<![' | ']]>') Char*)
-		//Ignore = new XmlGenChar("
+		Ignore = new XmlGenChar("<![]>"); // TODO Test
 
 		/* [64] ignoreSectContents ::= Ignore ('<![' ignoreSectContents ']]>' 
 			Ignore)*
 		*/
+		ignoreSectContents = new XmlGenSeq([Ignore.save,
+			new XmlGenStar(
+				new XmlGenSeq([
+					new XmlGenLiteral("<!["),
+					new XmlGenLiteral("]]>")
+				])
+			, 0, 3)
+		]);
 
 		// [63]	ignoreSect ::= '<![' S? 'IGNORE' S? '[' ignoreSectContents* ']]>'
-
-		// [62] includeSect ::= '<![' S? 'INCLUDE' S? '[' extSubsetDecl ']]>'
+		ignoreSect = new XmlGenSeq([
+			new XmlGenLiteral("<!["),
+			S.save,
+			new XmlGenLiteral("IGNORE"),
+			S.save,
+			new XmlGenLiteral("["),
+			new XmlGenStar(ignoreSectContents.save, 0, 3),
+			new XmlGenLiteral("]]>")
+		]);
 
 		// [61] conditionalSect ::= includeSect | ignoreSect
+		conditionalSect = new XmlGenOr([/*includeSect CYCLE ,*/ ignoreSect]);
+
+		// [31] extSubsetDecl ::= ( markupdecl | conditionalSect | DeclSep)*
+		extSubsetDecl = new XmlGenStar(
+			new XmlGenOr([
+				// makeupdecl.save TODO
+				conditionalSect.save
+				// DeclSep.save TODO
+			]), 0, 3
+		);
+
+		/* [62] includeSect ::= '<![' S? 'INCLUDE' S? '[' extSubsetDecl ']]>'
+		includeSect = new XmlGenSeq([
+			new XmlGenLiteral("<!["),
+			S.save,
+			new XmlGenLiteral("INCLUDE"),
+			S.save,
+			new XmlGenLiteral("["),
+			extSubsetDecl.save,
+			new XmlGenLiteral("]]>")
+		]);*/
 
 		// [70] EntityDecl ::= GEDecl | PEDecl
 		EntityDecl = new XmlGenOr([GEDecl.save, PEDecl.save]);
@@ -323,6 +359,7 @@ class XmlGenGenerator {
 	XmlGen VersionInfo; // 24
 	XmlGen Eq; // 25
 	XmlGen VersionNum; // 26
+	XmlGen extSubsetDecl; // 33
 	XmlGen conditionalSect; // 61
 	XmlGen includeSect; // 62
 	XmlGen ignoreSect; // 63
