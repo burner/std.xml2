@@ -7,23 +7,25 @@ import std.experimental.logger;
 
 /* The '+' grammar symbol will be translated as 1,2.
 The '*' grammar symbol will be translated as 0,1,2.
+The '?' grammar symbol will be translated as 0,1.
 */
 
 class XmlGenGenerator {
 	this() {
 		// [ 3] S ::= (#x20 | #x9 | #xD | #xA)+
-		S = new XmlGenStar(
+		S = //new XmlGenStar(
 			new XmlGenOr([
 				new XmlGenLiteral(" "),	
 				new XmlGenLiteral("\n"),	
 				new XmlGenLiteral("\t")
-			]), 1, 3
-		);
+			])//, 1, 3
+		//)
+		;
 
 		// [ 4] NameStartChar ::= ":" | [A-Z] | "_" | [a-z] | [#xC0-#xD6]
 		NameStartChar = new XmlGenOr([ new XmlGenLiteral(":"), 
 			new XmlGenLiteral(":"), new XmlGenCharRange('A', 'Z'),
-			new XmlGenCharRange('A', 'Z'), new XmlGenCharRange('\xC0', '\xD6')
+			new XmlGenCharRange('A', 'Z') //, new XmlGenCharRange('\xC0', '\xD6')
 		]);
 
 		/* [4a] NameChar ::= NameStartChar |  "-" | "." | [0-9] | #xB7 |
@@ -37,6 +39,9 @@ class XmlGenGenerator {
 		Name = new XmlGenSeq([NameStartChar.save, 
 			new XmlGenStar(NameChar.save, 1, 3)
 		]);
+
+		// [ 7] Nmtoken ::= (NameChar)+
+		Nmtoken = new XmlGenStar(NameChar, 1, 3);
 
 		// [11] SystemLiteral ::= ('"' [^"]* '"') | ("'" [^']* "'")
 		SystemLiteral = new XmlGenOr([
@@ -53,7 +58,9 @@ class XmlGenGenerator {
 		]);
 		
 		// [25] Eq ::= S? '=' S?
-		Eq = new XmlGenSeq([ S.save, new XmlGenLiteral("="), S.save ]);
+		Eq = new XmlGenSeq([ new XmlGenStar(S.save, 0, 2), 
+			new XmlGenLiteral("="), S.save 
+		]);
 
 		// [26] VersionNum ::= '1.' [0-9]+
 		VersionNum = new XmlGenSeq([ 
@@ -188,6 +195,138 @@ class XmlGenGenerator {
 			]),
 		]);
 
+		// [49]	choice ::= '(' S? cp ( S? '|' S? cp )+ S? ')'
+		// [48]	cp ::= (Name | choice | seq) ('?' | '*' | '+')?
+		// [50]	seq ::= '(' S? cp ( S? ',' S? cp )* S? ')'
+		// [47]	children ::= (choice | seq) ('?' | '*' | '+')?
+
+		// [55]	StringType ::= 'CDATA'
+		StringType = new XmlGenLiteral("CDATA");
+
+		/* [56]	TokenizedType ::= 'ID'
+								| 'IDREF'
+								| 'IDREFS'
+								| 'ENTITY'
+								| 'ENTITIES'
+								| 'NMTOKEN'
+								| 'NMTOKENS'
+		*/
+		TokenizedType = new XmlGenOr([
+			new XmlGenLiteral("ID"),
+			new XmlGenLiteral("IDREF"),
+			new XmlGenLiteral("IDREFS"),
+			new XmlGenLiteral("ENTITY"),
+			new XmlGenLiteral("ENTITIES"),
+			new XmlGenLiteral("NMTOKEN"),
+			new XmlGenLiteral("NMTOKENS")
+		]);
+
+		/* [51] Mixed ::= '(' S? '#PCDATA' (S? '|' S? Name)* S? ')*'
+						| '(' S? '#PCDATA' S? ')'
+		*/
+		Mixed = new XmlGenOr([
+			new XmlGenSeq([
+				new XmlGenLiteral("("), 
+				new XmlGenStar(S.save, 0, 2),
+				new XmlGenLiteral("#PCDATA"), 
+				new XmlGenStar(
+					new XmlGenOr([
+						new XmlGenStar(S.save, 0, 2),
+						new XmlGenSeq([
+							new XmlGenStar(S.save, 0, 2),
+							Name.save
+						])
+					]), 0, 3
+				),
+				new XmlGenStar(S.save, 0, 2),
+				new XmlGenLiteral(")*"), 
+			]),
+			new XmlGenSeq([
+				new XmlGenLiteral("("), 
+				new XmlGenStar(S.save, 0, 2),
+				new XmlGenLiteral("#PCDATA"), 
+				new XmlGenStar(S.save, 0, 2),
+				new XmlGenLiteral(")"), 
+			])
+		]);
+
+		// [59]	Enumeration ::= '(' S? Nmtoken (S? '|' S? Nmtoken)* S? ')'
+		Enumeration = new XmlGenSeq([
+			new XmlGenLiteral("("), 
+			new XmlGenStar(S.save, 0, 2),
+			Nmtoken.save,
+			new XmlGenStar(
+				new XmlGenOr([
+					new XmlGenStar(S.save, 0, 2),
+					new XmlGenSeq([
+						new XmlGenStar(S.save, 0, 2),
+						Nmtoken.save
+					])
+				]), 0, 3
+			),
+			new XmlGenStar(S.save, 0, 2),
+			new XmlGenLiteral(")"), 
+		]);
+
+		// [58]	NotationType ::= 'NOTATION' S '(' S? Name (S? '|' S?  Name)* S? ')'
+		NotationType = new XmlGenSeq([
+			new XmlGenLiteral("NOTATION"), 
+			S.save,
+			new XmlGenLiteral("("), 
+			new XmlGenStar(S.save, 0, 2),
+			Name.save,
+			new XmlGenStar(
+				new XmlGenOr([
+					new XmlGenStar(S.save, 0, 2),
+					new XmlGenSeq([
+						new XmlGenStar(S.save, 0, 2),
+						Name.save
+					])
+				]), 0, 3
+			),
+			new XmlGenStar(S.save, 0, 2),
+			new XmlGenLiteral(")"), 
+		]);
+
+		// [57]	EnumeratedType ::= NotationType | Enumeration
+		EnumeratedType = new XmlGenOr([
+			NotationType.save,
+			Enumeration.save,
+		]);
+
+		// [54]	AttType ::=	StringType | TokenizedType | EnumeratedType
+		AttType = new XmlGenOr([
+			TokenizedType.save,
+			EnumeratedType.save,
+			StringType.save
+		]);
+
+		// [60]	DefaultDecl ::=	'#REQUIRED' | '#IMPLIED' | (('#FIXED' S)? AttValue)	
+		DefaultDecl = new XmlGenOr([
+			new XmlGenLiteral("#REQUIRED"), 
+			new XmlGenLiteral("#IMPLIED"), 
+			new XmlGenSeq([
+				new XmlGenStar(
+					new XmlGenSeq([
+						new XmlGenLiteral("#FIXED"), 
+						S.save
+					]), 0, 2
+				),
+				AttValue.save
+			])
+		]);
+
+		// [53]	AttDef ::= S Name S AttType S DefaultDecl
+		AttDef = new XmlGenSeq([
+			S.save, Name.save, S.save, AttType.save, S.save, DefaultDecl.save
+		]);
+
+		// [52]	AttlistDecl ::= '<!ATTLIST' S Name AttDef* S? '>'
+		AttlistDecl = new XmlGenSeq([
+			new XmlGenLiteral("<!ATTLIST"), S.save, Name.save,
+			new XmlGenStar(AttDef.save, 0, 3), new XmlGenStar(S.save, 0, 2), 
+		]);
+
 		/* [75] ExternalID ::= 'SYSTEM' S SystemLiteral 
 							| 'PUBLIC' S PubidLiteral S SystemLiteral
 		*/
@@ -256,7 +395,9 @@ class XmlGenGenerator {
 		// [73] EntityDef ::= EntityValue | (ExternalID NDataDecl?)
 		EntityDef = new XmlGenOr([
 			EntityValue,
-			new XmlGenSeq([ExternalID.save, NDataDecl.save])
+			new XmlGenSeq([ExternalID.save, 
+				new XmlGenStar(NDataDecl.save, 0, 2)
+			])
 		]);
 
 		// [74] PEDef ::= EntityValue | ExternalID
@@ -265,13 +406,14 @@ class XmlGenGenerator {
 		// [71] GEDecl ::= '<!ENTITY' S Name S EntityDef S? '>'
 		GEDecl = new XmlGenSeq([
 			new XmlGenLiteral("<!ENTITY"), S.save, Name.save, S.save,
-			EntityDef.save, S.save, new XmlGenLiteral(">")
+			EntityDef.save, new XmlGenStar(S.save, 0, 2), new XmlGenLiteral(">")
 		]);
 
 		// [72] PEDecl ::= '<!ENTITY' S '%' S Name S PEDef S? '>'
 		PEDecl = new XmlGenSeq([
 			new XmlGenLiteral("<!ENTITY"), S.save, new XmlGenLiteral("%"), 
-			S.save, Name.save, S.save, PEDef.save, S.save, new XmlGenLiteral(">")
+			S.save, Name.save, S.save, PEDef.save, new XmlGenStar(S.save, 0, 2),
+		   	new XmlGenLiteral(">")
 		]);
 
 		// [65] Ignore ::= Char* - (Char* ('<![' | ']]>') Char*)
@@ -292,9 +434,9 @@ class XmlGenGenerator {
 		// [63]	ignoreSect ::= '<![' S? 'IGNORE' S? '[' ignoreSectContents* ']]>'
 		ignoreSect = new XmlGenSeq([
 			new XmlGenLiteral("<!["),
-			S.save,
+			new XmlGenStar(S.save, 0, 2),
 			new XmlGenLiteral("IGNORE"),
-			S.save,
+			new XmlGenStar(S.save, 0, 2),
 			new XmlGenLiteral("["),
 			new XmlGenStar(ignoreSectContents.save, 0, 3),
 			new XmlGenLiteral("]]>")
@@ -315,9 +457,9 @@ class XmlGenGenerator {
 		/* [62] includeSect ::= '<![' S? 'INCLUDE' S? '[' extSubsetDecl ']]>'
 		includeSect = new XmlGenSeq([
 			new XmlGenLiteral("<!["),
-			S.save,
+			new XmlGenStar(S.save, 0, 2),
 			new XmlGenLiteral("INCLUDE"),
-			S.save,
+			new XmlGenStar(S.save, 0, 2),
 			new XmlGenLiteral("["),
 			extSubsetDecl.save,
 			new XmlGenLiteral("]]>")
@@ -328,7 +470,8 @@ class XmlGenGenerator {
 
 		// [77] TextDecl ::= '<?xml' VersionInfo? EncodingDecl S? '?>'
 		TextDecl = new XmlGenSeq([
-			new XmlGenLiteral("<?xml"), VersionInfo.save, EncodingDecl.save,
+			new XmlGenLiteral("<?xml"), 
+			new XmlGenStar(VersionInfo.save, 0, 2), EncodingDecl.save,
 			S.save, new XmlGenLiteral("?>")
 		]);
 
@@ -343,7 +486,7 @@ class XmlGenGenerator {
 		NotationDecl = new XmlGenSeq([
 			new XmlGenLiteral("<!NOTATION"), S.save, Name.save, S.save,
 			new XmlGenOr([ExternalID.save, PublicID.save]), 
-			S.save, new XmlGenLiteral(">")
+			new XmlGenStar(S.save, 0, 2), new XmlGenLiteral(">")
 		]);
 	}
 
@@ -351,6 +494,7 @@ class XmlGenGenerator {
 	XmlGen NameStartChar; // 4
 	XmlGen NameChar; // 4a
 	XmlGen Name; // 5
+	XmlGen Nmtoken; // 7
 	XmlGen EntityValue; // 9
 	XmlGen AttValue; // 10
 	XmlGen SystemLiteral; // 11
@@ -360,6 +504,16 @@ class XmlGenGenerator {
 	XmlGen Eq; // 25
 	XmlGen VersionNum; // 26
 	XmlGen extSubsetDecl; // 33
+	XmlGen Mixed; // 52
+	XmlGen AttlistDecl; // 52
+	XmlGen AttDef; // 53
+	XmlGen AttType; // 54
+	XmlGen StringType; // 55
+	XmlGen TokenizedType; // 56
+	XmlGen EnumeratedType; // 57
+	XmlGen NotationType; // 58
+	XmlGen Enumeration; // 59
+	XmlGen DefaultDecl; // 60
 	XmlGen conditionalSect; // 61
 	XmlGen includeSect; // 62
 	XmlGen ignoreSect; // 63
@@ -385,7 +539,7 @@ class XmlGenGenerator {
 
 unittest {
 	auto x = new XmlGenGenerator();
-	auto g = x.EntityValue;
+	auto g = x.Mixed;
 	while(!g.empty) {
 		log(g.front);
 		g.popFront();
