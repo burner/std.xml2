@@ -36,9 +36,10 @@ class XmlGenGenerator {
 		]);
 
 		// [ 5] Name ::= NameStartChar (NameChar)*
-		Name = new XmlGenSeq([NameStartChar.save, 
+		/*Name = new XmlGenSeq([NameStartChar.save, 
 			new XmlGenStar(NameChar.save, 1, 3)
-		]);
+		]);*/
+		Name = new XmlGenString();
 
 		// [ 7] Nmtoken ::= (NameChar)+
 		Nmtoken = new XmlGenStar(NameChar, 1, 3);
@@ -89,18 +90,20 @@ class XmlGenGenerator {
 		CharRef = new XmlGenOr([
 			new XmlGenSeq([
 				new XmlGenLiteral("&#"),
-				new XmlGenStar(new XmlGenCharRange('0','9'), 1, 3),
+				//new XmlGenStar(new XmlGenCharRange('0','9'), 1, 3),
+				new XmlGenCharRange('0','9'),
 				new XmlGenLiteral(";")
 			]),
 			new XmlGenSeq([
 				new XmlGenLiteral("&#x"),
-				new XmlGenStar(
+				/*new XmlGenStar(
 					new XmlGenOr([
 						new XmlGenCharRange('0','9'),
 						new XmlGenCharRange('a','f'),
 						new XmlGenCharRange('A','F')
 					]), 1, 3
-				),
+				),*/
+				new XmlGenString(),
 				new XmlGenLiteral(";")
 			]),
 		]);
@@ -195,10 +198,48 @@ class XmlGenGenerator {
 			]),
 		]);
 
-		// [49]	choice ::= '(' S? cp ( S? '|' S? cp )+ S? ')'
 		// [48]	cp ::= (Name | choice | seq) ('?' | '*' | '+')?
-		// [50]	seq ::= '(' S? cp ( S? ',' S? cp )* S? ')'
+		// TODO not complete
+		cp = new XmlGenSeq([
+			Name.save,
+			new XmlGenStar(
+				new XmlGenOr([
+					new XmlGenLiteral("?"),
+					new XmlGenLiteral("*"),
+					new XmlGenLiteral("+")
+				]), 0, 2
+			)
+		]);
+
+		// [49]	choice ::= '(' S? cp ( S? '|' S? cp )+ S? ')'
+		choice = new XmlGenSeq([
+			new XmlGenLiteral("("), 
+			new XmlGenStar(S.save, 0, 2),
+			new XmlGenStar(
+				new XmlGenOr([
+					new XmlGenStar(S.save, 0, 2),
+					new XmlGenSeq([
+						new XmlGenStar(S.save, 0, 2),
+						cp.save
+					])
+				]), 1, 3
+			),
+			new XmlGenStar(S.save, 0, 2),
+			new XmlGenLiteral(")"), 
+		]);
+
+		// [50]	seq ::= '(' S? cp ( S? ',' S? cp )* S? ')' TODO recursion
 		// [47]	children ::= (choice | seq) ('?' | '*' | '+')?
+		children = new XmlGenSeq([
+			choice, 
+			new XmlGenStar(
+				new XmlGenOr([
+					new XmlGenLiteral("?"),
+					new XmlGenLiteral("*"),
+					new XmlGenLiteral("+")
+				]), 0, 2
+			)
+		]);
 
 		// [55]	StringType ::= 'CDATA'
 		StringType = new XmlGenLiteral("CDATA");
@@ -248,6 +289,111 @@ class XmlGenGenerator {
 				new XmlGenStar(S.save, 0, 2),
 				new XmlGenLiteral(")"), 
 			])
+		]);
+
+		// [46] contentspec	::= 'EMPTY' | 'ANY' | Mixed | children
+		contentspec = new XmlGenOr([
+			new XmlGenLiteral("EMPTY"), 
+			new XmlGenLiteral("ANY"), 
+			Mixed.save,
+			children.save
+		]);
+
+		// [45] elementdecl	::= '<!ELEMENT' S Name S contentspec S? '>'
+		elementdecl = new XmlGenSeq([
+			new XmlGenLiteral("<!ELEMENT"), 
+			S.save, Name.save, S.save, contentspec.save,
+			new XmlGenStar(S.save, 0, 2), new XmlGenLiteral(">"), 
+		]);
+
+		// [41] Attribute ::= Name Eq AttValue
+		Attribute = new XmlGenSeq([
+			Name.save,
+			Eq.save,
+			AttValue.save
+		]);
+
+		// [40] STag ::= '<' Name (S Attribute)* S? '>'
+		STag = new XmlGenSeq([
+			new XmlGenLiteral("<"), 
+			Name.save, 
+			new XmlGenStar(
+				new XmlGenSeq([
+					S.save,
+					Attribute.save
+				]), 0, 3
+			), 
+			new XmlGenStar(S.save, 0, 2),
+			new XmlGenLiteral(">"), 
+		]);
+
+		// [42]	ETag ::= '</' Name S? '>'
+		ETag = new XmlGenSeq([
+			new XmlGenLiteral("</"), 
+			Name.save, 
+			new XmlGenStar(S.save, 0, 2),
+		]);
+
+		// [14] CharData ::= [^<&]* - ([^<&]* ']]>' [^<&]*) TODO very crude
+		CharData = new XmlGenChar("<&>");
+
+		// [15]	Comment ::=	'<!--' ((Char - '-') | ('-' (Char - '-')))* '-->'
+		Comment = new XmlGenSeq([
+			new XmlGenLiteral("<!--"), 
+			new XmlGenChar("<&>"),
+			new XmlGenLiteral("-->"), 
+		]);
+
+		// [17]	PITarget ::= Name - (('X' | 'x') ('M' | 'm') ('L' | 'l'))
+		PITarget = new XmlGenString("XxMmLl");
+
+		// [16]	PI ::= '<?' PITarget (S (Char* - (Char* '?>' Char*)))? '?>'
+		PI = new XmlGenSeq([
+			new XmlGenLiteral("<?"), 
+			PITarget.save,
+			new XmlGenString("?><"), // TODO very crude
+			new XmlGenLiteral("?>"), 
+		]);
+
+		/* [43] content	::=	CharData? (
+		  	 (element | Reference | CDSect | PI | Comment) 
+		   		CharData?)*
+		*/
+		content = new XmlGenSeq([
+			new XmlGenStar(CharData.save, 0, 2),
+			new XmlGenStar(
+				new XmlGenSeq([
+					new XmlGenOr([
+						//element.save, TODO recursion
+						Reference.save,
+						//CDSect.save,
+						PI.save,
+						Comment.save
+					]),
+					new XmlGenStar(CharData.save, 0, 2),
+				]), 0, 3
+			)
+		]);
+
+		// [44] EmptyElemTag ::= '<' Name (S Attribute)* S? '/>'
+		EmptyElemTag = new XmlGenSeq([
+			new XmlGenLiteral("<"), 
+			Name.save, 
+			new XmlGenStar(
+				new XmlGenSeq([
+					S.save,
+					Attribute.save
+				]), 0, 3
+			), 
+			new XmlGenStar(S.save, 0, 2),
+			new XmlGenLiteral("/>"), 
+		]);
+
+		/* [39]	element ::=	EmptyElemTag
+						| STag content ETag	
+		*/
+		element = new XmlGenOr([//EmptyElemTag.save,
+			new XmlGenSeq([STag.save, content.save, ETag.save])
 		]);
 
 		// [59]	Enumeration ::= '(' S? Nmtoken (S? '|' S? Nmtoken)* S? ')'
@@ -500,11 +646,26 @@ class XmlGenGenerator {
 	XmlGen SystemLiteral; // 11
 	XmlGen PubidLiteral; // 12
 	XmlGen PubidChar; // 13
+	XmlGen CharData; // 14
+	XmlGen Comment; // 15
+	XmlGen PI; // 16
+	XmlGen PITarget; // 17
 	XmlGen VersionInfo; // 24
 	XmlGen Eq; // 25
 	XmlGen VersionNum; // 26
 	XmlGen extSubsetDecl; // 33
-	XmlGen Mixed; // 52
+	XmlGen element; // 40
+	XmlGen STag; // 40
+	XmlGen Attribute; // 41
+	XmlGen ETag; // 42
+	XmlGen content; // 43
+	XmlGen EmptyElemTag; // 44
+	XmlGen elementdecl; // 45
+	XmlGen contentspec; // 46
+	XmlGen children; // 47
+	XmlGen cp; // 48
+	XmlGen choice; // 49
+	XmlGen Mixed; // 51
 	XmlGen AttlistDecl; // 52
 	XmlGen AttDef; // 53
 	XmlGen AttType; // 54
@@ -539,7 +700,7 @@ class XmlGenGenerator {
 
 unittest {
 	auto x = new XmlGenGenerator();
-	auto g = x.Mixed;
+	auto g = x.content;
 	while(!g.empty) {
 		log(g.front);
 		g.popFront();

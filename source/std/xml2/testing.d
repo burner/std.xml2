@@ -6,6 +6,7 @@ import std.typecons : TypeTuple;
 import std.range.primitives : ElementType, ElementEncodingType;
 import std.random : Random, uniform;
 import std.experimental.logger;
+import std.string : indexOf;
 
 alias TestInputTypes = TypeTuple!(
 	string, wstring, dstring,
@@ -63,9 +64,16 @@ T makeTestInputTypes(T,S)(S s) {
 alias XmlGenRnd = Random;
 
 pure @safe bool hasState(XmlGen o) {
-	foreach(T; TypeTuple!(XmlGenSeq,XmlGenStar,XmlGenOr)) {
-		auto a = cast(T)o;
-		if(a !is null) {
+	auto a = cast(XmlGenSeq)o;
+	if(a !is null) {
+		if(a.hasStateM()) {
+			return true;
+		}	
+	}
+
+	foreach(T; TypeTuple!(XmlGenStar,XmlGenOr)) {
+		auto b = cast(T)o;
+		if(b !is null) {
 			return true;
 		}
 	}
@@ -78,7 +86,7 @@ unittest {
 		new XmlGenString()
 	]);
 
-	assert(hasState(x));
+	assert(!hasState(x));
 
 	x = new XmlGenStar(
 		new XmlGenLiteral("A"), 1, 2
@@ -127,6 +135,16 @@ class XmlGenSeq : XmlGen {
 		}
 
 		return app.data;
+	}
+
+	bool hasStateM() pure @safe {
+		foreach(it; this.seq) {
+			if(hasState(it)) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	override void popFront() {
@@ -191,8 +209,6 @@ class XmlGenChar : XmlGen {
 	}
 
 	override void popFront() {
-		import std.string : indexOf;
-
 		while(true) {
 			auto c = XmlGenChar.chars[uniform(0, XmlGenChar.chars.length)];
 			if(this.exclude.indexOf(c) == -1) {
@@ -263,10 +279,19 @@ class XmlGenString : XmlGen {
 		this.popFront();
 	}
 
+	this(string ex = "") {
+		this.exclude = ex;
+		this.popFront();
+	}
+
 	override void popFront() {
 		auto app = appender!string();
-		for(int i = 3; i < 10; ++i) {
-			app.put(XmlGenString.chars[uniform(0, XmlGenString.chars.length)]);
+		const auto l = uniform(3, 10);
+		while(true && app.data.length < l) {
+			auto c = XmlGenString.chars[uniform(0, XmlGenString.chars.length)];
+			if(this.exclude.indexOf(c) == -1) {
+				app.put(c);
+			}
 		}
 
 		this.frontValue = app.data;
@@ -289,6 +314,7 @@ class XmlGenString : XmlGen {
 	static string chars;
 
 	string frontValue;
+	string exclude;
 }
 
 class XmlGenLiteral : XmlGen {
