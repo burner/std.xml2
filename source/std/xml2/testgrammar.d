@@ -681,15 +681,6 @@ class XmlGenGenerator {
 		// [61] conditionalSect ::= includeSect | ignoreSect
 		conditionalSect = new XmlGenOr([/*includeSect CYCLE ,*/ ignoreSect]);
 
-		// [31] extSubsetDecl ::= ( markupdecl | conditionalSect | DeclSep)*
-		extSubsetDecl = new XmlGenStar(
-			new XmlGenOr([
-				// makeupdecl.save TODO
-				conditionalSect.save
-				// DeclSep.save TODO
-			]), 0, 3
-		);
-
 		/* [62] includeSect ::= '<![' S? 'INCLUDE' S? '[' extSubsetDecl ']]>'
 		includeSect = new XmlGenSeq([
 			new XmlGenLiteral("<!["),
@@ -710,6 +701,7 @@ class XmlGenGenerator {
 			new XmlGenStar(VersionInfo.save, 0, 2), EncodingDecl.save,
 			S.save, new XmlGenLiteral("?>")
 		]);
+
 
 		// [83] PublicID ::= 'PUBLIC' S PubidLiteral
 		PublicID = new XmlGenSeq([
@@ -735,6 +727,21 @@ class XmlGenGenerator {
 			NotationDecl.save,
 			PI.save,
 			Comment.save
+		]);
+
+		// [31] extSubsetDecl ::= ( markupdecl | conditionalSect | DeclSep)*
+		extSubsetDecl = new XmlGenStar(
+			new XmlGenOr([
+				markupdecl.save,
+				conditionalSect.save,
+				DeclSep.save,
+			])
+		, 0, 3);
+
+		// [30] extSubset ::= TextDecl? extSubsetDecl
+		extSubset = new XmlGenSeq([
+			new XmlGenStar(TextDecl.save, 0, 2),
+			extSubsetDecl.save
 		]);
 
 		// [28b] intSubset ::= (markupdecl | DeclSep)*
@@ -795,9 +802,11 @@ class XmlGenGenerator {
 	XmlGen DeclSep; // 28a
 	XmlGen intSubset; // 28b
 	XmlGen markupdecl; // 29
+	XmlGen extSubset; // 30
+	XmlGen extSubsetDecl; // 31
 	XmlGen SDDecl; // 32
-	XmlGen extSubsetDecl; // 33
-	XmlGen element; // 40
+	// (Productions 33 through 38 have been removed.)
+	XmlGen element; // 39
 	XmlGen STag; // 40
 	XmlGen Attribute; // 41
 	XmlGen ETag; // 42
@@ -835,6 +844,7 @@ class XmlGenGenerator {
 	XmlGen ExternalID; // 75
 	XmlGen NDataDecl; // 76
 	XmlGen TextDecl; // 77
+	XmlGen extParsedEnt; // 77
 	XmlGen EncodingDecl; // 80
 	XmlGen EncName; // 81
 	XmlGen NotationDecl; // 82
