@@ -617,8 +617,6 @@ struct Lexer(Input,
 	}
 }
 
-__EOF__
-
 unittest { // eatuntil
 	import std.algorithm.comparison : equal;
 	import std.format : format;
@@ -905,11 +903,13 @@ unittest {
 
 unittest {
 	import std.file : readText;
-	auto s = readText("tests/oasis/p12pass1.xml");
+	auto s = readText("tests/xmltest/valid/sa/out/050.xml");
 	auto lexer = Lexer!(string,TrackPosition.yes)(s);
 	while(!lexer.empty) {
 		auto f = lexer.front;
+		log(f);
 		lexer.popFront();
+		log(lexer.input);
 	}
 	assert(lexer.input.empty);
 }
@@ -955,22 +955,24 @@ unittest {
 			continue;
 		}
 
-		log(name);
+		//log(name);
 
 		foreach(T ; TestInputTypes) {
 			foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
+				typeof(Lexer!(T,P).front) f;
 				try {
 					auto testStr = makeTestInputTypes!T(s);
 					auto lexer = Lexer!(T,P)(testStr);
 					while(!lexer.empty) {
-						auto f = lexer.front;
+						f = lexer.front;
 						lexer.popFront();
 					}
 					assert(lexer.input.empty);
 				} catch(UTFException e) {
-					assert(false, e.toString());
-				} catch(Exception e) {
-					assert(false, e.toString());
+					logf("%s %s %s %s", name, T.stringof, P, e.toString());
+				} catch(Throwable e) {
+					logf("%s %s %s %s", name, T.stringof, P, e.toString());
+					//assert(false, e.toString());
 				}
 			}
 		}
