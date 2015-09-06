@@ -421,18 +421,6 @@ class XmlGenGenerator {
 		// [28a] DeclSep ::= PEReference | S
 		DeclSep = new XmlGenOr([PEReference.save, S.save]);
 
-		/*
-		//[22] prolog ::=	XMLDecl? Misc* (doctypedecl Misc*)?
-		prolog = new XmlGenSeq([
-			new XmlGenStar(XMLDecl.save, 0, 2),
-			new XmlGenStar(Misc.save, 0, 2),
-			new XmlGenStar(new XmlGenSeq([
-				doctypedecl.save,
-				new XmlGenStar(Misc.save, 0, 2)
-			]), 0, 2)
-		]);
-		*/
-
 		/* [43] content	::=	CharData? (
 		  	 (element | Reference | CDSect | PI | Comment) 
 		   		CharData?)*
@@ -681,17 +669,6 @@ class XmlGenGenerator {
 		// [61] conditionalSect ::= includeSect | ignoreSect
 		conditionalSect = new XmlGenOr([/*includeSect CYCLE ,*/ ignoreSect]);
 
-		/* [62] includeSect ::= '<![' S? 'INCLUDE' S? '[' extSubsetDecl ']]>'
-		includeSect = new XmlGenSeq([
-			new XmlGenLiteral("<!["),
-			new XmlGenStar(S.save, 0, 2),
-			new XmlGenLiteral("INCLUDE"),
-			new XmlGenStar(S.save, 0, 2),
-			new XmlGenLiteral("["),
-			extSubsetDecl.save,
-			new XmlGenLiteral("]]>")
-		]);*/
-
 		// [70] EntityDecl ::= GEDecl | PEDecl
 		EntityDecl = new XmlGenOr([GEDecl.save, PEDecl.save]);
 
@@ -702,6 +679,11 @@ class XmlGenGenerator {
 			S.save, new XmlGenLiteral("?>")
 		]);
 
+		// [78]	extParsedEnt ::= TextDecl? content
+		extParsedEnt = new XmlGenSeq([
+			new XmlGenStar(TextDecl.save, 0, 2),
+			content.save
+		]);
 
 		// [83] PublicID ::= 'PUBLIC' S PubidLiteral
 		PublicID = new XmlGenSeq([
@@ -738,6 +720,17 @@ class XmlGenGenerator {
 			])
 		, 0, 3);
 
+		// [62] includeSect ::= '<![' S? 'INCLUDE' S? '[' extSubsetDecl ']]>'
+		includeSect = new XmlGenSeq([
+			new XmlGenLiteral("<!["),
+			/*new XmlGenStar(*/S.save/*, 0, 2)*/,
+			new XmlGenLiteral("INCLUDE"),
+			/*new XmlGenStar(*/S.save/*, 0, 2)*/,
+			new XmlGenLiteral("["),
+			extSubsetDecl.save,
+			new XmlGenLiteral("]]>")
+		]);
+
 		// [30] extSubset ::= TextDecl? extSubsetDecl
 		extSubset = new XmlGenSeq([
 			new XmlGenStar(TextDecl.save, 0, 2),
@@ -770,6 +763,17 @@ class XmlGenGenerator {
 			]), 0, 2),
 			new XmlGenLiteral(">"),
 		]);
+
+		//[22] prolog ::=	XMLDecl? Misc* (doctypedecl Misc*)?
+		prolog = new XmlGenSeq([
+			new XmlGenStar(XMLDecl.save, 0, 2),
+			new XmlGenStar(Misc.save, 0, 2),
+			new XmlGenStar(new XmlGenSeq([
+				doctypedecl.save,
+				new XmlGenStar(Misc.save, 0, 2)
+			]), 0, 2)
+		]);
+
 	}
 
 	XmlGen S; // 3
@@ -844,7 +848,7 @@ class XmlGenGenerator {
 	XmlGen ExternalID; // 75
 	XmlGen NDataDecl; // 76
 	XmlGen TextDecl; // 77
-	XmlGen extParsedEnt; // 77
+	XmlGen extParsedEnt; // 78
 	XmlGen EncodingDecl; // 80
 	XmlGen EncName; // 81
 	XmlGen NotationDecl; // 82
@@ -853,9 +857,9 @@ class XmlGenGenerator {
 
 unittest {
 	auto x = new XmlGenGenerator();
-	auto g = x.doctypedecl;
+	/*auto g = x.prolog;
 	while(!g.empty) {
 		log(g.front);
 		g.popFront();
-	}
+	}*/
 }
