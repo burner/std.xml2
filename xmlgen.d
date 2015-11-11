@@ -168,7 +168,7 @@ void genAuthors(Out)(Out output, const ulong depth) {
 	
 		indent(output, depth);
 	}
-	output.put("</Authros>\n");
+	output.put("</Authors>\n");
 }
 
 string genString(const ulong minLen, const ulong maxLen) @safe {
