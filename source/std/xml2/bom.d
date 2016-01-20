@@ -202,7 +202,7 @@ private void dstringToOtherEndian(uint[] arr) {
 	}
 }
 
-S readTextWithBom(S = string, R)(R name)
+S readTextWithBOM(S = string, R)(R name)
     if (isSomeString!S &&
         (isInputRange!R && isSomeChar!(ElementEncodingType!R) || isSomeString!R) &&
         !isConvertibleToString!R)
@@ -266,6 +266,6 @@ S readTextWithBom(S = string, R)(R name)
 		default:
 			assert(false);
 	}
-	validate(ret);
+	//validate(ret);
     return ret;
 }

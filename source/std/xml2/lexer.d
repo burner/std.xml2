@@ -934,19 +934,19 @@ unittest {
 
 unittest {
 	import std.xml2.bom;
-	auto s = readTextWithBom("tests/xmltest/valid/sa/out/050.xml");
-	log(s);
+	auto s = readTextWithBOM("tests/xmltest/valid/sa/out/050.xml");
+	//log(s);
 	auto lexer = Lexer!(string,TrackPosition.yes)(s);
 	while(!lexer.empty) {
 		auto f = lexer.front;
-		log(f);
+		//log(f);
 		lexer.popFront();
-		log(lexer.input);
+		//log(lexer.input);
 	}
 	assert(lexer.input.empty);
 }
 
-/*unittest {
+unittest {
 	import std.file : dirEntries, SpanMode, readText;
 	import std.stdio : writeln;
 	import std.path : extension;
@@ -955,8 +955,8 @@ unittest {
 	int cnt = 0;
 	int cntW = 0;
 	foreach(string name; dirEntries("tests", SpanMode.depth)
-			.filter!(a => extension(a) == ".xml" 
-				&& a.name.indexOf("not") == -1
+			.filter!(a => extension(a) == ".xml" )
+				/*&& a.name.indexOf("not") == -1
 				&& a.name.indexOf("invalid") == -1
 				&& a.name.indexOf("fail") == -1 
 				&& a.name.indexOf("japa") == -1
@@ -993,15 +993,16 @@ unittest {
 				&& a.name.indexOf("xml-1.1/out/015.xml") == -1
 				&& a.name.indexOf("xml-1.1/out/017.xml") == -1
 				&& a.name.indexOf("xml-1.1/out/021.xml") == -1
-			)
+			)*/
 		)
 	{
 		import std.utf : UTFException;
+		import std.xml2.bom : readTextWithBOM;
 
 		string s;
 		try {
 			++cnt;
-			s = readText(name);
+			s = readTextWithBOM(name);
 			++cntW;
 		} catch(Exception e) {
 			logf("%s %s", name, e.toString());
@@ -1022,7 +1023,7 @@ unittest {
 					}
 					assert(lexer.input.empty);
 				} catch(UTFException e) {
-					logf("%s %s %s %s", name, T.stringof, P, e.toString());
+					//logf("%s %s %s %s", name, T.stringof, P, e.toString());
 					break outer;
 					//assert(false);
 				} catch(Throwable e) {
@@ -1036,4 +1037,4 @@ unittest {
 	}
 
 	logf("%s of %s could be read", cntW, cnt);
-}*/
+}
