@@ -236,15 +236,23 @@ struct Lexer(Input,
 		this.buildNext = true;
 	}
 
-	private void popAndAdvance() {
+	private uint popAndAdvance() {
 		checkCondition(!this.input.empty, "this.input must not be empty");
 		this.position.advance(this.input.front);
-		this.input.popFront();
+		static if(isSomeString!Input) {
+			import std.utf : stride;
+			auto ret = stride(this.input);
+			this.input = this.input[ret .. $];
+			return ret;
+		} else {
+			this.input.popFront();
+			return 1u;
+		}
 	}
 
 	private void popAndAdvance(const size_t cnt) {
-		for(size_t i = 0; i < cnt; ++i) {
-			this.popAndAdvance();
+		for(size_t i = 0; i < cnt;) {
+			i += this.popAndAdvance();
 		}	
 	}
 
@@ -660,16 +668,16 @@ unittest { // eatuntil
 					auto slice = lexer.eatUntil(it[i]);
 
 					assert(equal(slice, it[0 .. i]), 
-						format("%u '%c' '%s' '%s' %s", i, it[i], slice, it[0 .. i],
-							T.stringof
+						format("%u '%c' '%s' '%s' %s", 
+							i, it[i], slice, it[0 .. i], T.stringof
 						)
 					);
 
 					if(i+1 == it.length) {
 						assert(lexer.input.front == it[i],
-							format("%u '%c' '%s' '%s' %s '%s' T=%s P=%s", i, 
-								it[i], slice, it[0 .. i], T.stringof,
-								lexer.input, T.stringof, P.stringof
+							format("%s\n%s == %s,\ni %d\nT %s\nP %s",
+								it, lexer.input.front, it[i], i, T.stringof,
+							   	P.stringof
 							)
 						);
 					}
@@ -924,9 +932,10 @@ unittest {
 	}
 }
 
-/*unittest {
-	import std.file : readText;
-	auto s = readText("tests/xmltest/valid/sa/out/050.xml");
+unittest {
+	import std.xml2.bom;
+	auto s = readTextWithBom("tests/xmltest/valid/sa/out/050.xml");
+	log(s);
 	auto lexer = Lexer!(string,TrackPosition.yes)(s);
 	while(!lexer.empty) {
 		auto f = lexer.front;
@@ -935,7 +944,7 @@ unittest {
 		log(lexer.input);
 	}
 	assert(lexer.input.empty);
-}*/
+}
 
 /*unittest {
 	import std.file : dirEntries, SpanMode, readText;
