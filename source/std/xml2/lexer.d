@@ -1,18 +1,17 @@
 module std.xml2.lexer;
 
-import core.exception : AssertError;
+import core.exception;
 
 import std.xml2.testing;
-import std.xml2.misc : toStringX;
+import std.xml2.misc;
 import std.xml2.exceptions;
 
-import std.array : empty, back, appender, Appender;
-import std.conv : to;
-import std.format : format;
-import std.typecons : Flag;
-import std.range.primitives : ElementEncodingType, ElementType, hasSlicing,
-	isInputRange, isOutputRange;
-import std.traits : isArray, isSomeString;
+import std.array;
+import std.conv;
+import std.format;
+import std.typecons;
+import std.range.primitives
+import std.traits;
 import std.stdio;
 
 version(unittest) {
@@ -29,44 +28,6 @@ enum ErrorHandling {
 	exceptions,
 	asserts,
 	ignore
-}
-
-struct SourcePosition(TrackPosition track) {
-	static if(track) {
-		size_t line = 1u;
-		size_t column = 1u;
-	}
-
-	void advance(C)(C c) {
-		static if(track) {
-			if(c == '\n') {
-				this.column = 1u;
-				++this.line;
-			} else {
-				++this.column;
-			}
-		}
-	}
-
-	void toString(void delegate(const(char)[]) @trusted sink) const @safe {
-		sink("Pos(");
-		static if(track) {
-			import std.conv : to;
-			sink("Line ");
-			sink(to!string(this.line));
-			sink(", Column ");
-			sink(to!string(this.column));
-		}
-		sink(")");
-	}
-}
-
-unittest {
-	SourcePosition!(TrackPosition.yes) sp;
-	sp.advance('\n');
-	assert(sp.line == 2, format("%s", sp));
-	SourcePosition!(TrackPosition.no) sp2;
-	sp2.advance('\n');
 }
 
 enum NodeType {
@@ -153,22 +114,7 @@ void reproduceNodeTypeString(T,O)(NodeType type, ref O output) @safe {
 	}
 }
 
-struct Attribute(Input) {
-	struct Attribute {
-		Input name;
-		Input value;
-	}
-
-	static Attribute!Input opCall(Input input) {
-		typeof(return) ret;
-		ret.input = input;
-	}
-
-	Input input;
-}
-
 struct Lexer(Input, 
-	TrackPosition trackPosition = TrackPosition.yes,
 	KeepComments keepComments = KeepComments.yes,
 	ErrorHandling errorHandling = ErrorHandling.exceptions,
 	EagerAttributeParse eagerAttributeParse = EagerAttributeParse.no
@@ -177,12 +123,8 @@ struct Lexer(Input,
 	import std.xml2.misc : ForwardRangeInput;
 
 	struct Node {
-		NodeType nodeType;
 		ElementEncodingType!(Input)[] input;
-	
-		SourcePosition!trackPosition position;
-	
-		Attributes!Input attributes;
+		NodeType nodeType;
 	
 		this(in NodeType nodeType) {
 			this.nodeType = nodeType;
@@ -193,34 +135,25 @@ struct Lexer(Input,
 			sink("Node(");	
 			this.nodeType.toString(sink);
 			sink(",");
-			this.position.toString(sink);
-			sink(",");
 			sink(to!string(this.input));
 			sink(")");
 		}
-
-		bool mightHasAttributes() const pure @safe nothrow {
-			switch(this.nodeType) {
-				case NodeType.StartTag: return true;
-				case NodeType.EndTag: return true;
-				case NodeType.EmptyTag: return true;
-				default: return false;
-			}
-		}
 	}
 
-	SourcePosition!trackPosition position;
 	static if(isSomeString!Input || isArray!Input) {
 		Input input;
+		size_t curPos;
 	} else {
 		ForwardRangeInput!(Input,16) input;
 	}
+
 	Node ret;
 	bool buildNext;
 
 	this(Input input) {
 		static if(isSomeString!Input || isArray!Input) {
 			this.input = input;
+			this.curPos = 0;
 		} else {
 			this.input = ForwardRangeInput!(Input,16)(input);
 		}
@@ -236,7 +169,7 @@ struct Lexer(Input,
 		this.buildNext = true;
 	}
 
-	private uint popAndAdvance() {
+	/*private uint popAndAdvance() {
 		checkCondition(!this.input.empty, "this.input must not be empty");
 		this.position.advance(this.input.front);
 		static if(isSomeString!Input) {
@@ -254,7 +187,7 @@ struct Lexer(Input,
 		for(size_t i = 0; i < cnt;) {
 			i += this.popAndAdvance();
 		}	
-	}
+	}*/
 
 	import std.traits : isSomeChar;
 
@@ -274,7 +207,7 @@ struct Lexer(Input,
 		}
 	}
 
-	bool testAndEatPrefix(Prefix)(Prefix prefix, bool eatMatch = true) 
+	/*bool testAndEatPrefix(Prefix)(Prefix prefix, bool eatMatch = true) 
 			if(isSomeChar!Prefix) 
 	{
 		checkCondition(!this.input.empty, 
@@ -310,7 +243,7 @@ struct Lexer(Input,
 		} else {
 			return false;
 		}
-	}
+	}*/
 
 	NodeType getAndEatNodeType() {
 		checkCondition(!this.input.empty, "this.input must not be empty");
@@ -641,9 +574,19 @@ struct Lexer(Input,
 	}
 
 	private void eatWhitespace() {
-		import std.uni : isWhite;
-		while(!this.input.empty && isWhite(this.input.front)) {
-			this.popAndAdvance();
+		for(; this.curPos < this.input.length; ++this.curPos) {
+			static if(ElementEncodingType!(Input).sizeof == 1
+					|| ElementEncodingType!(Input).sizeof == 2
+					|| ElementEncodingType!(Input).sizeof == 4) 
+			{
+				if(this.input[this.curPos] != 0x20
+					&& this.input[this.curPos] != 0x09
+					&& this.input[this.curPos] != 0x0d
+					&& this.input[this.curPos] != 0x0A)
+				{
+					break;
+				}
+			}
 		}
 	}
 }
