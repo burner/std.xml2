@@ -10,7 +10,7 @@ import std.array;
 import std.conv;
 import std.format;
 import std.typecons;
-import std.range.primitives
+import std.range.primitives;
 import std.traits;
 import std.stdio;
 
@@ -113,8 +113,173 @@ void reproduceNodeTypeString(T,O)(NodeType type, ref O output) @safe {
 		}
 	}
 }
+void checkCondition(R = XMLException, 
+		ErrorHandling errorHandling = ErrorHandling.exceptions, 
+		E)
+		(E expression, string msg, 
+		string file = __FILE__, size_t line = __LINE__,
+   		string func = __FUNCTION__)
+{
+	import std.format : format;
+
+	if(!expression) {
+		auto s = format("%s %s", func, msg);
+		static if(errorHandling == ErrorHandling.asserts) {
+			throw new AssertError(s, file, line);
+		} else static if(errorHandling == ErrorHandling.exceptions) {
+			throw new R(s, file, line);
+		}
+	}
+}
+
+struct Slicer(T) {
+	T input;
+	size_t curPos;
+
+	this(T input) {
+		this.input = input;
+		this.curPos = 0;
+	}
+
+	private void eatWhitespace() {
+		for(; this.curPos < this.input.length; ++this.curPos) {
+			static if(ElementEncodingType!(T).sizeof == 1
+					|| ElementEncodingType!(T).sizeof == 2
+					|| ElementEncodingType!(T).sizeof == 4) 
+			{
+				if(this.input[this.curPos] != 0x20
+					&& this.input[this.curPos] != 0x09
+					&& this.input[this.curPos] != 0x0d
+					&& this.input[this.curPos] != 0x0A)
+				{
+					break;
+				}
+			}
+		}
+	}
+
+	NodeType getAndEatNodeType() {
+		checkCondition(this.curPos < this.input.length, "this.input must not be empty");
+		if(this.input[this.curPos] == '<') {
+			++curPos;
+
+			checkCondition(this.curPos < this.input.length, "this.input must not be empty");
+			if(this.input[this.curPos] == '!') {
+				++curPos;
+
+				if(testAndEatPrefix!("ELEMENT")()) {
+					return NodeType.Element;
+				} else if(testAndEatPrefix!("DOCTYPE")()) {
+					return NodeType.DocType;
+				} else if(testAndEatPrefix!("[CDATA[")()) {
+					return NodeType.CData;
+				} else if(testAndEatPrefix!("--")()) {
+					return NodeType.Comment;
+				} else if(testAndEatPrefix!("ATTLIST")()) {
+					return NodeType.AttributeList;
+				} else if(testAndEatPrefix!("NOTATION")()) {
+					return NodeType.Notation;
+				} else if(testAndEatPrefix!("ENTITY")()) {
+					return NodeType.Entity;
+				}
+			} else if(this.input[this.curPos] == '?') {
+				++this.curPos;
+				return NodeType.ProcessingInstruction;
+			} else if(this.input[this.curPos] == '/') {
+				++this.curPos;
+				return NodeType.EndTag;
+			} else {
+				return NodeType.StartTag;
+			}
+		} else if(this.input[this.curPos] != '>') {
+			return NodeType.Text;
+		}
+
+		return NodeType.Unknown;
+	}
+
+	bool testAndEatPrefix(string prefix)() {
+		for(size_t i = 0; i < prefix.length; ++i) {
+			size_t idx = this.curPos + i;
+			if(idx >= this.input.length 
+					|| this.input[this.curPos + i] != prefix[i]) 
+			{
+				return false;
+			}
+		}
+
+		this.curPos += prefix.length;
+		return true;
+	}
+}
+
+unittest {
+	import std.xml2.misc : toStringX;
+
+	static struct Prefix {
+		string prefix;
+		NodeType type;
+	}
+
+	const auto prefixes = [
+		Prefix("<xml>", NodeType.StartTag),
+		Prefix("</xml>", NodeType.EndTag),
+		//Prefix("<xml/>", NodeType.EmptyTag),
+ 		// Just to check correct access, actually invalid node
+		Prefix("</>", NodeType.EndTag),
+		Prefix("<!ELEMENT>", NodeType.Element),
+		Prefix("<!DOCTYPE>", NodeType.DocType),
+		Prefix("<!NOTATION>", NodeType.Notation),
+		Prefix("<![CDATA[]]>", NodeType.CData),
+		Prefix("<!-- -->", NodeType.Comment),
+		Prefix("<!ATTLIST>", NodeType.AttributeList),
+		Prefix("<?Hello ?>", NodeType.ProcessingInstruction),
+		Prefix("<?xml ?>", NodeType.Prolog),
+		Prefix(">", NodeType.Unknown),
+		Prefix("Test", NodeType.Text),
+		Prefix("<!ELEMENT root EMPTY>", NodeType.Element),
+		Prefix("<!ATTLIST root xml:lang CDATA #IMPLIED>",
+				NodeType.AttributeList),
+		Prefix("<!ENTITY utf16b SYSTEM \"../invalid/utf16b.xml\">",
+				NodeType.Entity),
+		Prefix("<!ENTITY utf16l SYSTEM \"../invalid/utf16l.xml\"> ]>},",
+			NodeType.Entity),
+		Prefix("<!ELEMENT foo (root*)>", NodeType.Element),
+		Prefix("<!ELEMENT root EMPTY>", NodeType.Element),
+		Prefix("<!ENTITY % zz '&#60;!ENTITY tricky \"error-prone\" >' >",
+			NodeType.Entity),
+		Prefix("<!ENTITY % xx '&#37;zz;'>", NodeType.Entity)
+	];
+
+	foreach(T ; TestInputArray) {
+		foreach(idx, it; prefixes) {
+			import std.xml2.misc : indexOfX;
+			//logf("'%s'", it.prefix);
+			auto input = makeTestInputTypes!T(it.prefix);
+			auto slicer = Slicer!T(input);
+
+			auto nt = slicer.getAndEatNodeType();
+			assert(nt == it.type, format("idx %s, %s %s", idx, nt, it.type));
+
+			/*typeof(lexer.front) n;
+			try {
+				n = lexer.front;
+			} catch(Exception e) {
+			}
+			assert(n.nodeType == it.type, it.prefix ~ "|" ~
+				toStringX(lexer.input) ~ "|" ~ to!string(n.nodeType) ~ 
+				" " ~ to!string(it.type) ~ " '" ~ toStringX(n.input) ~ 
+				"' " ~ T.stringof);
+			*/
+		}
+	}
+}
+
+
+__EOF__
 
 struct Lexer(Input, 
+	Impl,
 	KeepComments keepComments = KeepComments.yes,
 	ErrorHandling errorHandling = ErrorHandling.exceptions,
 	EagerAttributeParse eagerAttributeParse = EagerAttributeParse.no
@@ -141,8 +306,6 @@ struct Lexer(Input,
 	}
 
 	static if(isSomeString!Input || isArray!Input) {
-		Input input;
-		size_t curPos;
 	} else {
 		ForwardRangeInput!(Input,16) input;
 	}
@@ -191,22 +354,6 @@ struct Lexer(Input,
 
 	import std.traits : isSomeChar;
 
-	void checkCondition(R = XMLException ,E)(E expression, string msg, 
-		string file = __FILE__, size_t line = __LINE__,
-	   	string func = __FUNCTION__)
-	{
-		import std.format : format;
-
-		if(!expression) {
-			auto s = format("%s %s %s", func, position, msg);
-			static if(errorHandling == ErrorHandling.asserts) {
-				throw new AssertError(s, file, line);
-			} else static if(errorHandling == ErrorHandling.exceptions) {
-				throw new R(s, file, line);
-			}
-		}
-	}
-
 	/*bool testAndEatPrefix(Prefix)(Prefix prefix, bool eatMatch = true) 
 			if(isSomeChar!Prefix) 
 	{
@@ -244,45 +391,6 @@ struct Lexer(Input,
 			return false;
 		}
 	}*/
-
-	NodeType getAndEatNodeType() {
-		checkCondition(!this.input.empty, "this.input must not be empty");
-		if(this.input.front == '<') {
-			this.popAndAdvance();
-
-			checkCondition(!this.input.empty, "this.input must not be empty");
-			if(this.input.front == '!') {
-				this.popAndAdvance();
-				if(testAndEatPrefix("ELEMENT")) {
-					return NodeType.Element;
-				} else if(testAndEatPrefix("DOCTYPE")) {
-					return NodeType.DocType;
-				} else if(testAndEatPrefix("[CDATA[")) {
-					return NodeType.CData;
-				} else if(testAndEatPrefix("--")) {
-					return NodeType.Comment;
-				} else if(testAndEatPrefix("ATTLIST")) {
-					return NodeType.AttributeList;
-				} else if(testAndEatPrefix("NOTATION")) {
-					return NodeType.Notation;
-				} else if(testAndEatPrefix("ENTITY")) {
-					return NodeType.Entity;
-				}
-			} else if(this.input.front == '?') {
-				this.popAndAdvance();
-				return NodeType.ProcessingInstruction;
-			} else if(this.input.front == '/') {
-				this.popAndAdvance();
-				return NodeType.EndTag;
-			} else {
-				return NodeType.StartTag;
-			}
-		} else if(this.input.front != '>') {
-			return NodeType.Text;
-		}
-
-		return NodeType.Unknown;
-	}
 
 	static if(hasSlicing!Input || isSomeString!Input) {
 		Input eatUntil(T)(const T until) {
@@ -573,22 +681,6 @@ struct Lexer(Input,
 		this.eatWhitespace();
 	}
 
-	private void eatWhitespace() {
-		for(; this.curPos < this.input.length; ++this.curPos) {
-			static if(ElementEncodingType!(Input).sizeof == 1
-					|| ElementEncodingType!(Input).sizeof == 2
-					|| ElementEncodingType!(Input).sizeof == 4) 
-			{
-				if(this.input[this.curPos] != 0x20
-					&& this.input[this.curPos] != 0x09
-					&& this.input[this.curPos] != 0x0d
-					&& this.input[this.curPos] != 0x0A)
-				{
-					break;
-				}
-			}
-		}
-	}
 }
 
 unittest { // eatuntil
@@ -650,66 +742,6 @@ unittest { // eatWhitespace
 			auto lexer = Lexer!(T,P)(input);
 			lexer.eatWhitespace();
 			assert(lexer.empty);
-		}
-	}
-}
-
-unittest {
-	import std.xml2.misc : toStringX;
-
-	static struct Prefix {
-		string prefix;
-		NodeType type;
-	}
-
-	const auto prefixes = [
-		Prefix("<xml>", NodeType.StartTag),
-		Prefix("</xml>", NodeType.EndTag),
-		Prefix("<xml/>", NodeType.EmptyTag),
- 		// Just to check correct access, actually invalid node
-		Prefix("</>", NodeType.EndTag),
-		Prefix("<!ELEMENT>", NodeType.Element),
-		Prefix("<!DOCTYPE>", NodeType.DocType),
-		Prefix("<!NOTATION>", NodeType.Notation),
-		Prefix("<![CDATA[]]>", NodeType.CData),
-		Prefix("<!-- -->", NodeType.Comment),
-		Prefix("<!ATTLIST>", NodeType.AttributeList),
-		Prefix("<?Hello ?>", NodeType.ProcessingInstruction),
-		Prefix("<?xml ?>", NodeType.Prolog),
-		Prefix(">", NodeType.Unknown),
-		Prefix("Test", NodeType.Text),
-		Prefix("<!ELEMENT root EMPTY>", NodeType.Element),
-		Prefix("<!ATTLIST root xml:lang CDATA #IMPLIED>",
-				NodeType.AttributeList),
-		Prefix("<!ENTITY utf16b SYSTEM \"../invalid/utf16b.xml\">",
-				NodeType.Entity),
-		Prefix("<!ENTITY utf16l SYSTEM \"../invalid/utf16l.xml\"> ]>},",
-			NodeType.Entity),
-		Prefix("<!ELEMENT foo (root*)>", NodeType.Element),
-		Prefix("<!ELEMENT root EMPTY>", NodeType.Element),
-		Prefix("<!ENTITY % zz '&#60;!ENTITY tricky \"error-prone\" >' >",
-			NodeType.Entity),
-		Prefix("<!ENTITY % xx '&#37;zz;'>", NodeType.Entity)
-	];
-
-	foreach(T ; TestInputTypes) {
-		foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
-			foreach(it; prefixes) {
-				import std.xml2.misc : indexOfX;
-				//logf("'%s'", it.prefix);
-				auto input = makeTestInputTypes!T(it.prefix);
-				auto lexer = Lexer!(T,P)(input);
-
-				typeof(lexer.front) n;
-				try {
-					n = lexer.front;
-				} catch(Exception e) {
-				}
-				assert(n.nodeType == it.type, it.prefix ~ "|" ~
-					toStringX(lexer.input) ~ "|" ~ to!string(n.nodeType) ~ 
-					" " ~ to!string(it.type) ~ " '" ~ toStringX(n.input) ~ 
-					"' " ~ T.stringof);
-			}
 		}
 	}
 }

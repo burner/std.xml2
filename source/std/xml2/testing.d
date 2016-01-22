@@ -15,6 +15,16 @@ alias TestInputTypes = TypeTuple!(
 	CharInputRange!string, CharInputRange!wstring, CharInputRange!dstring
 );
 
+alias TestInputArray = TypeTuple!(
+	string, wstring, dstring,
+	char[], wchar[], dchar[],
+	immutable(ubyte)[], immutable(ushort)[], immutable(uint)[]
+);
+
+alias TestInputRanges = TypeTuple!(
+	CharInputRange!string, CharInputRange!wstring, CharInputRange!dstring
+);
+
 struct CharInputRange(T) {
 	T input;
 
