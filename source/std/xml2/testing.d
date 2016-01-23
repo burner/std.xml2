@@ -11,14 +11,14 @@ import std.string : indexOf;
 alias TestInputTypes = TypeTuple!(
 	string, wstring, dstring,
 	char[], wchar[], dchar[],
-	immutable(ubyte)[], immutable(ushort)[], immutable(uint)[],
+	//immutable(ubyte)[], immutable(ushort)[], immutable(uint)[],
 	CharInputRange!string, CharInputRange!wstring, CharInputRange!dstring
 );
 
 alias TestInputArray = TypeTuple!(
 	string, wstring, dstring,
-	char[], wchar[], dchar[],
-	immutable(ubyte)[], immutable(ushort)[], immutable(uint)[]
+	char[], wchar[], dchar[]
+	//immutable(ubyte)[], immutable(ushort)[], immutable(uint)[]
 );
 
 alias TestInputRanges = TypeTuple!(

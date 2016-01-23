@@ -6,6 +6,7 @@ import std.xml2.testing;
 import std.xml2.misc;
 import std.xml2.exceptions;
 
+import std.exception;
 import std.array;
 import std.conv;
 import std.format;
@@ -132,6 +133,20 @@ void checkCondition(R = XMLException,
 	}
 }
 
+struct Node(T) {
+	T input;
+	NodeType nodeType;
+
+	void toString(void delegate(const(char)[]) @trusted sink) @safe {
+		import std.conv : to;
+		sink("Node(");	
+		this.nodeType.toString(sink);
+		sink(",");
+		sink(to!string(this.input));
+		sink(")");
+	}
+}
+
 struct Slicer(T) {
 	T input;
 	size_t curPos;
@@ -211,6 +226,187 @@ struct Slicer(T) {
 		this.curPos += prefix.length;
 		return true;
 	}
+
+	bool testAndEatPrefix(char c)() {
+		if(this.curPos < this.input.length && this.input[this.curPos] == c) {
+			++this.curPos;
+			return true;
+		} else {
+			return false;
+		}
+	}
+
+	T eatUntil(S)(const S until) {
+		import std.xml2.misc: indexOfX;
+
+		auto idx = indexOfX(this.input[this.curPos .. $], until);
+		T ret;
+		if(idx == -1) {
+			ret = this.input[this.curPos .. $];
+		} else {
+			ret = this.input[this.curPos .. this.curPos + idx];
+		}
+		this.curPos += idx;
+		return ret;
+	}
+
+	T parseEntity() {
+		import std.xml2.misc: indexOfX;
+
+		auto idx = indexOfX(this.input, '\'', this.curPos);
+		if(idx == -1) {
+			idx = 0;
+		} else {
+			idx = indexOfX(this.input, '\'', this.curPos + idx + 1);
+		}
+		idx = indexOfX(this.input, '>', idx + 1);
+		enforce!XMLException(idx != -1, "Failed to find '>'");
+
+		auto ret = this.input[this.curPos .. idx];
+		this.curPos = idx;
+		
+		return ret;
+	}
+
+	static bool compare(string c,S)(S s) {
+		if(c.length != s.length) {
+			return false;
+		} else {
+			enum cS = to!S(c);
+			for(size_t i = 0; i < cS.length; ++i) {
+				if(cS[i] != s[i]) {
+					return false;
+				}
+			}
+
+			return true;
+		}
+	}
+
+	T balancedEatBraces() {
+		size_t idx = this.curPos;
+		int cnt = 1;
+		int state = 0;
+		while(idx < this.input.length) {
+			if(this.input.length - idx > 3) {
+				import std.stdio : writeln;
+				/*writeln(this.input[idx .. idx+4], "%%", state, "%%",
+					this.input[idx .. idx+3] == "-->", "%%", cnt, "%%",
+					idx);*/
+			}
+			if(state == 0 && this.input[idx] == '>') {
+				--cnt;
+				if(cnt == 0) {
+					break;
+				}
+			} else if(state == 0 && this.input.length - idx > 3 && 
+					compare!("<!--")(this.input[idx .. idx+4]))
+			{
+				state = 3;
+				idx += 3;
+			} else if(state == 3 && this.input.length - idx > 2 && 
+					compare!("-->")(this.input[idx .. idx+3]))
+			{
+				state = 0;
+				idx += 2;
+			} else if(state == 0 && this.input[idx] == '<') {
+				++cnt;
+			} else if(state == 0 && this.input[idx] == '"') {
+				state = 2;
+			} else if(state == 2 && this.input[idx] == '"') {
+				state = 0;
+			} else if(state == 0 && this.input[idx] == '\'') {
+				state = 1;
+			} else if(state == 1 && this.input[idx] == '\'') {
+				state = 0;
+			}
+			++idx;
+		}
+
+		auto ret = this.input[this.curPos .. idx];
+		this.curPos = idx;
+
+		return ret;
+	}
+
+	Node!T front() {
+		Node!T node;
+		node.nodeType = this.getAndEatNodeType();
+		final switch(node.nodeType) {
+			case NodeType.Unknown:
+				version(unittest) {
+					throw new XMLException(
+						"TODO: Error Handling", __FILE__, __LINE__
+					);
+				} else {
+					break;
+				}
+			case NodeType.StartTag: { 
+				node.input = this.eatUntil('>');
+				if(node.nodeType == NodeType.StartTag
+						&& !node.input.empty && node.input[$ - 1] == '/') 
+				{
+					node.nodeType = NodeType.EmptyTag;
+				}
+				this.testAndEatPrefix!'>'();
+				break;
+			}
+			case NodeType.Entity:
+				node.input = this.parseEntity();
+				log(node.input);
+				log(this.input[this.curPos .. $]);
+				enforce!XMLException(this.testAndEatPrefix!'>'(),
+					"Expected '>'"
+				);
+				break;
+			case NodeType.EndTag:
+				goto case NodeType.StartTag;
+			case NodeType.EmptyTag:
+				assert(false, "can't be found here, is done one step later");
+			case NodeType.CData: { 
+				node.input = this.eatUntil("]]>");
+				enforce!XMLException(this.testAndEatPrefix!("]]>")(),
+					"Expected ']]>'"
+				);
+				break;
+			}
+			case NodeType.Text: { 
+				node.input = this.eatUntil('<');
+				break;
+			}
+			case NodeType.AttributeList:
+				goto case NodeType.StartTag;
+			case NodeType.ProcessingInstruction:
+				goto case NodeType.Prolog;
+			case NodeType.DocType: {
+				node.input = this.balancedEatBraces();
+				this.testAndEatPrefix!('>')();
+				break;
+			}
+			case NodeType.Element:
+				goto case NodeType.StartTag;
+			case NodeType.Comment: { 
+				node.input = this.eatUntil("-->");
+				this.testAndEatPrefix!("-->")();
+				break;
+			}
+			case NodeType.Notation:
+				goto case NodeType.StartTag;
+			case NodeType.Prolog: { 
+				node.input = this.eatUntil("?>");
+				if(node.input.indexOfX("xml ") == 0) {
+					node.nodeType = NodeType.Prolog;
+				}
+				this.testAndEatPrefix!("?>")();
+				break;
+			}
+		}
+
+		this.eatWhitespace();
+		return node;
+	}
+
+
 }
 
 unittest {
@@ -254,12 +450,18 @@ unittest {
 	foreach(T ; TestInputArray) {
 		foreach(idx, it; prefixes) {
 			import std.xml2.misc : indexOfX;
-			//logf("'%s'", it.prefix);
+			logf("'%s'", it.prefix);
 			auto input = makeTestInputTypes!T(it.prefix);
 			auto slicer = Slicer!T(input);
 
-			auto nt = slicer.getAndEatNodeType();
-			assert(nt == it.type, format("idx %s, %s %s", idx, nt, it.type));
+			if(it.type == NodeType.Unknown) {
+				assertThrown!XMLException(slicer.front);
+			} else {
+				Node!T nt = slicer.front;
+				assert(nt.nodeType == it.type, 
+					format("idx %s, %s %s", idx, nt, it.type)
+				);
+			}
 
 			/*typeof(lexer.front) n;
 			try {
@@ -286,24 +488,6 @@ struct Lexer(Input,
 ) {
 
 	import std.xml2.misc : ForwardRangeInput;
-
-	struct Node {
-		ElementEncodingType!(Input)[] input;
-		NodeType nodeType;
-	
-		this(in NodeType nodeType) {
-			this.nodeType = nodeType;
-		}
-	
-		void toString(void delegate(const(char)[]) @trusted sink) @safe {
-			import std.conv : to;
-			sink("Node(");	
-			this.nodeType.toString(sink);
-			sink(",");
-			sink(to!string(this.input));
-			sink(")");
-		}
-	}
 
 	static if(isSomeString!Input || isArray!Input) {
 	} else {
@@ -412,75 +596,6 @@ struct Lexer(Input,
 			return ret;
 		}
 
-		Input parseEntity() {
-			import std.xml2.misc: indexOfX;
-
-			auto idx = indexOfX(this.input, '\'');
-			if(idx == -1) {
-				idx = 0;
-			} else {
-				idx = indexOfX(this.input, '\'', idx+1);
-			}
-			idx = indexOfX(this.input, '>', idx+1);
-
-			auto ret = this.input[0 .. idx];
-			
-			static if(TrackPosition.yes) {
-				this.popAndAdvance(idx);
-			} else {
-				this.input = this.input[idx .. $];
-			}
-
-			return ret;
-		}
-
-		Input balancedEatBraces() {
-			size_t idx = 0;
-			int cnt = 1;
-			int state = 0;
-			Input ret;
-			while(idx < this.input.length) {
-				if(this.input.length - idx > 3) {
-					import std.stdio : writeln;
-					/*writeln(this.input[idx .. idx+4], "%%", state, "%%",
-						this.input[idx .. idx+3] == "-->", "%%", cnt, "%%",
-						idx);*/
-				}
-				if(state == 0 && this.input[idx] == '>') {
-					--cnt;
-					if(cnt == 0) {
-						break;
-					}
-				} else if(state == 0 && this.input.length - idx > 3 && 
-						this.input[idx .. idx+4] == "<!--") 
-				{
-					state = 3;
-					idx += 3;
-				} else if(state == 3 && this.input.length - idx > 2 && 
-						this.input[idx .. idx+3] == "-->") 
-				{
-					state = 0;
-					idx += 2;
-				} else if(state == 0 && this.input[idx] == '<') {
-					++cnt;
-				} else if(state == 0 && this.input[idx] == '"') {
-					state = 2;
-				} else if(state == 2 && this.input[idx] == '"') {
-					state = 0;
-				} else if(state == 0 && this.input[idx] == '\'') {
-					state = 1;
-				} else if(state == 1 && this.input[idx] == '\'') {
-					state = 0;
-				}
-				++idx;
-				ret = this.input[0 .. idx];
-			}
-
-			ret = this.input[0 .. idx];
-			this.input = this.input[idx .. $];
-
-			return ret;
-		}
 	} else {
 		auto eatUntil(T)(const T until) {
 			auto app = appender!(ElementEncodingType!(Input)[])();
