@@ -150,10 +150,13 @@ struct Node(T) {
 struct Slicer(T) {
 	T input;
 	size_t curPos;
+	Node!T node;
+	bool buildNext;
 
 	this(T input) {
 		this.input = input;
 		this.curPos = 0;
+		this.buildNext = true;
 	}
 
 	private void eatWhitespace() {
@@ -329,8 +332,18 @@ struct Slicer(T) {
 		return ret;
 	}
 
-	Node!T front() {
-		Node!T node;
+	void popFront() {
+		this.buildNext = true;
+	}
+
+	@property bool empty() const {
+		return this.curPos >= this.input.length;
+	}
+
+	@property Node!T front() {
+		if(!this.buildNext) {
+			return this.node;
+		}
 		node.nodeType = this.getAndEatNodeType();
 		final switch(node.nodeType) {
 			case NodeType.Unknown:
@@ -353,8 +366,8 @@ struct Slicer(T) {
 			}
 			case NodeType.Entity:
 				node.input = this.parseEntity();
-				log(node.input);
-				log(this.input[this.curPos .. $]);
+				//log(node.input);
+				//log(this.input[this.curPos .. $]);
 				enforce!XMLException(this.testAndEatPrefix!'>'(),
 					"Expected '>'"
 				);
@@ -403,10 +416,125 @@ struct Slicer(T) {
 		}
 
 		this.eatWhitespace();
+		this.buildNext = false;
 		return node;
 	}
+}
+
+struct Range(T) {
+	auto eatUntil(T)(const T until) {
+		auto app = appender!(ElementEncodingType!(Input)[])();
+		while(!this.input.empty && !this.testAndEatPrefix(until, false)) {
+			app.put(this.input.front);	
+			this.popAndAdvance();
+		}
+
+		return app.data;
+	}
+
+	auto parseEntity() {
+		auto app = appender!(ElementEncodingType!(Input)[])();
+		while(!this.input.empty && this.input.front != '>' 
+				&& this.input.front != '\'')
+		{
+			app.put(this.input.front);	
+			this.popAndAdvance();
+		}
+		
+		checkCondition(!this.input.empty, "this.input must not be empty");
+
+		if(this.input.front == '>') {
+			return app.data;
+		} else {
+			app.put(this.input.front);
+			this.popAndAdvance();
+			while(!this.input.empty && this.input.front != '\'') {
+				app.put(this.input.front);	
+				this.popAndAdvance();
+			}
+
+			checkCondition(!this.input.empty, "this.input must not be empty");
+			app.put(this.input.front);
+			this.popAndAdvance();
+
+			while(!this.input.empty && this.input.front != '>') {
+				app.put(this.input.front);	
+				this.popAndAdvance();
+			}
+
+			return app.data;
+		}
+	}
+
+	auto balancedEatBraces() {
+		auto app = appender!(ElementEncodingType!(Input)[])();
+		int cnt = 1;
+		int state = 0;
+		while(!this.input.empty) {
+			//writeln(this.input.getBuffer(), " || ", state, '\n');
+			if(state == 0 && this.input.front == '>') {
+				--cnt;
+				if(cnt == 0) {
+					break;
+				}
+			} else if(state == 0 && testAndEatPrefix("<!--", false)) {
+				foreach(it; 0 .. 3) {
+					checkCondition(!this.input.empty, 
+						"this.input must not be empty");
+					app.put(this.input.front);
+					this.input.popFront();
+				}
+				state = 3;
+			} else if(state == 3 && testAndEatPrefix("-->", false)) {
+				foreach(it; 0 .. 2) {
+					checkCondition(!this.input.empty, 
+						"this.input must not be empty");
+					app.put(this.input.front);
+					this.input.popFront();
+				}
+				state = 0;
+			} else if(state == 0 && this.input.front == '"') {
+				state = 2;
+			} else if(state == 2 && this.input.front == '"') {
+				state = 0;
+			} else if(state == 0 && this.input.front == '<') {
+				++cnt;
+			} else if(state == 0 && this.input.front == '\'') {
+				state = 1;
+			} else if(state == 1 && this.input.front == '\'') {
+				state = 0;
+			}
+			checkCondition(!this.input.empty, "this.input must not be empty");
+			app.put(this.input.front);
+			this.input.popFront();
+		}
+		return app.data;
+	}
+
+}
 
 
+struct Lexer(Input, 
+	Impl
+) {
+
+	Impl impl;
+
+	this(Input input) {
+		this.impl = Impl!Input(input);
+	}
+
+	@property bool empty() {
+		return this.impl.empty;
+	}
+
+	@property Node!Input front() {
+		return this.impl.front;
+	}
+
+	void popFront() {
+		this.impl.popFront();
+	}
 }
 
 unittest {
@@ -420,7 +548,7 @@ unittest {
 	const auto prefixes = [
 		Prefix("<xml>", NodeType.StartTag),
 		Prefix("</xml>", NodeType.EndTag),
-		//Prefix("<xml/>", NodeType.EmptyTag),
+		Prefix("<xml/>", NodeType.EmptyTag),
  		// Just to check correct access, actually invalid node
 		Prefix("</>", NodeType.EndTag),
 		Prefix("<!ELEMENT>", NodeType.Element),
@@ -438,8 +566,6 @@ unittest {
 				NodeType.AttributeList),
 		Prefix("<!ENTITY utf16b SYSTEM \"../invalid/utf16b.xml\">",
 				NodeType.Entity),
-		Prefix("<!ENTITY utf16l SYSTEM \"../invalid/utf16l.xml\"> ]>},",
-			NodeType.Entity),
 		Prefix("<!ELEMENT foo (root*)>", NodeType.Element),
 		Prefix("<!ELEMENT root EMPTY>", NodeType.Element),
 		Prefix("<!ENTITY % zz '&#60;!ENTITY tricky \"error-prone\" >' >",
@@ -450,355 +576,27 @@ unittest {
 	foreach(T ; TestInputArray) {
 		foreach(idx, it; prefixes) {
 			import std.xml2.misc : indexOfX;
-			logf("'%s'", it.prefix);
+			//logf("'%s'", it.prefix);
 			auto input = makeTestInputTypes!T(it.prefix);
-			auto slicer = Slicer!T(input);
+			auto lexer = Lexer!(T,Slicer!T)(input);
+			assert(!lexer.empty);
 
 			if(it.type == NodeType.Unknown) {
-				assertThrown!XMLException(slicer.front);
+				assertThrown!XMLException(lexer.front);
 			} else {
-				Node!T nt = slicer.front;
+				Node!T nt = lexer.front;
 				assert(nt.nodeType == it.type, 
 					format("idx %s, %s %s", idx, nt, it.type)
 				);
+				lexer.popFront();
+				assert(lexer.empty);
 			}
-
-			/*typeof(lexer.front) n;
-			try {
-				n = lexer.front;
-			} catch(Exception e) {
-			}
-			assert(n.nodeType == it.type, it.prefix ~ "|" ~
-				toStringX(lexer.input) ~ "|" ~ to!string(n.nodeType) ~ 
-				" " ~ to!string(it.type) ~ " '" ~ toStringX(n.input) ~ 
-				"' " ~ T.stringof);
-			*/
 		}
 	}
 }
 
 
-__EOF__
-
-struct Lexer(Input, 
-	Impl,
-	KeepComments keepComments = KeepComments.yes,
-	ErrorHandling errorHandling = ErrorHandling.exceptions,
-	EagerAttributeParse eagerAttributeParse = EagerAttributeParse.no
-) {
-
-	import std.xml2.misc : ForwardRangeInput;
-
-	static if(isSomeString!Input || isArray!Input) {
-	} else {
-		ForwardRangeInput!(Input,16) input;
-	}
-
-	Node ret;
-	bool buildNext;
-
-	this(Input input) {
-		static if(isSomeString!Input || isArray!Input) {
-			this.input = input;
-			this.curPos = 0;
-		} else {
-			this.input = ForwardRangeInput!(Input,16)(input);
-		}
-		this.buildNext = true;
-		this.eatWhitespace();
-	}
-
-	@property bool empty() {
-		return this.input.empty;
-	}
-
-	void popFront() {
-		this.buildNext = true;
-	}
-
-	/*private uint popAndAdvance() {
-		checkCondition(!this.input.empty, "this.input must not be empty");
-		this.position.advance(this.input.front);
-		static if(isSomeString!Input) {
-			import std.utf : stride;
-			auto ret = stride(this.input);
-			this.input = this.input[ret .. $];
-			return ret;
-		} else {
-			this.input.popFront();
-			return 1u;
-		}
-	}
-
-	private void popAndAdvance(const size_t cnt) {
-		for(size_t i = 0; i < cnt;) {
-			i += this.popAndAdvance();
-		}	
-	}*/
-
-	import std.traits : isSomeChar;
-
-	/*bool testAndEatPrefix(Prefix)(Prefix prefix, bool eatMatch = true) 
-			if(isSomeChar!Prefix) 
-	{
-		checkCondition(!this.input.empty, 
-			"testAndEatPrefix this.input must not be empty");
-		if(this.input.front == prefix) {
-			if(eatMatch) {
-				this.popAndAdvance();
-			}
-			return true;
-		} else {
-			return false;
-		}
-	}
-
-	bool testAndEatPrefix(Prefix)(Prefix prefix, bool eatMatch = true) 
-			if(!isSomeChar!Prefix) 
-	{
-		import std.xml2.misc : indexOfX;
-
-		static if(isSomeString!(typeof(this.input)) ||
-				isArray!(typeof(this.input))) 
-		{
-			auto idx = this.input.indexOfX(prefix);
-		} else {
-			this.input.prefetch();
-			auto idx = this.input.getBuffer().indexOfX(prefix);
-		}
-		if(idx == 0) {
-			if(eatMatch) {
-				this.popAndAdvance(prefix.length);
-			}
-			return true;
-		} else {
-			return false;
-		}
-	}*/
-
-	static if(hasSlicing!Input || isSomeString!Input) {
-		Input eatUntil(T)(const T until) {
-			import std.xml2.misc: indexOfX;
-
-			auto idx = indexOfX(this.input, until);
-			if(idx == -1) {
-				idx = this.input.length;
-			}
-
-			auto ret = this.input[0 .. idx];
-
-			static if(TrackPosition.yes) {
-				this.popAndAdvance(idx);
-			} else {
-				this.input = this.input[idx .. $];
-			}
-
-			return ret;
-		}
-
-	} else {
-		auto eatUntil(T)(const T until) {
-			auto app = appender!(ElementEncodingType!(Input)[])();
-			while(!this.input.empty && !this.testAndEatPrefix(until, false)) {
-				app.put(this.input.front);	
-				this.popAndAdvance();
-			}
-
-			return app.data;
-		}
-
-		auto parseEntity() {
-			auto app = appender!(ElementEncodingType!(Input)[])();
-			while(!this.input.empty && this.input.front != '>' 
-					&& this.input.front != '\'')
-			{
-				app.put(this.input.front);	
-				this.popAndAdvance();
-			}
-			
-			checkCondition(!this.input.empty, "this.input must not be empty");
-
-			if(this.input.front == '>') {
-				return app.data;
-			} else {
-				app.put(this.input.front);
-				this.popAndAdvance();
-				while(!this.input.empty && this.input.front != '\'') {
-					app.put(this.input.front);	
-					this.popAndAdvance();
-				}
-
-				checkCondition(!this.input.empty, "this.input must not be empty");
-				app.put(this.input.front);
-				this.popAndAdvance();
-
-				while(!this.input.empty && this.input.front != '>') {
-					app.put(this.input.front);	
-					this.popAndAdvance();
-				}
-
-				return app.data;
-			}
-		}
-
-		auto balancedEatBraces() {
-			auto app = appender!(ElementEncodingType!(Input)[])();
-			int cnt = 1;
-			int state = 0;
-			while(!this.input.empty) {
-				//writeln(this.input.getBuffer(), " || ", state, '\n');
-				if(state == 0 && this.input.front == '>') {
-					--cnt;
-					if(cnt == 0) {
-						break;
-					}
-				} else if(state == 0 && testAndEatPrefix("<!--", false)) {
-					foreach(it; 0 .. 3) {
-						checkCondition(!this.input.empty, 
-							"this.input must not be empty");
-						app.put(this.input.front);
-						this.input.popFront();
-					}
-					state = 3;
-				} else if(state == 3 && testAndEatPrefix("-->", false)) {
-					foreach(it; 0 .. 2) {
-						checkCondition(!this.input.empty, 
-							"this.input must not be empty");
-						app.put(this.input.front);
-						this.input.popFront();
-					}
-					state = 0;
-				} else if(state == 0 && this.input.front == '"') {
-					state = 2;
-				} else if(state == 2 && this.input.front == '"') {
-					state = 0;
-				} else if(state == 0 && this.input.front == '<') {
-					++cnt;
-				} else if(state == 0 && this.input.front == '\'') {
-					state = 1;
-				} else if(state == 1 && this.input.front == '\'') {
-					state = 0;
-				}
-				checkCondition(!this.input.empty, "this.input must not be empty");
-				app.put(this.input.front);
-				this.input.popFront();
-			}
-			return app.data;
-		}
-	}
-
-	@property Node front() {
-		if(this.buildNext) {
-			if(this.input.empty) {
-				throw new Exception("Input empty");
-			} else {
-				bool didNotWork = false;
-				ubyte[__traits(classInstanceSize, XMLException)] exception;
-				this.frontImpl(&this.ret, didNotWork, exception);
-				this.buildNext = false;
-
-				if(didNotWork) {
-					throw new XMLException((cast(XMLException)exception.ptr));
-				}
-			}
-		}
-		return this.ret;
-	}
-
-	@property Node front(out bool didNotWork) {
-		if(this.buildNext) {
-			if(this.input.empty) {
-				throw new Exception("Input empty");
-			} else {
-				ubyte[__traits(classInstanceSize, XMLException)] exception;
-				this.frontImpl(&this.ret, didNotWork, exception);
-				this.buildNext = false;
-			}
-		}
-		return this.ret;
-	}
-
-	void frontImpl(Node* node, ref bool didNotWork, void[] exception) {
-		//this.eatWhitespace();
-
-		auto pos = this.position;
-		const NodeType nodeType = this.getAndEatNodeType();
-
-		import std.conv : emplace;
-		import std.xml2.misc : indexOfX;
-
-		emplace(node, nodeType);
-		node.position = pos;
-
-		final switch(nodeType) {
-			case NodeType.Unknown:
-				version(unittest) {
-					emplace!XMLException(
-						exception, "TODO: Error Handling", __FILE__, __LINE__);
-					didNotWork = true;
-				}
-				break;
-			case NodeType.StartTag: { 
-				node.input = this.eatUntil('>');
-				if(node.nodeType == NodeType.StartTag
-						&& !node.input.empty && node.input.back == '/') 
-				{
-					node.nodeType = NodeType.EmptyTag;
-				}
-				this.testAndEatPrefix('>');
-				break;
-			}
-			case NodeType.Entity:
-				node.input = this.parseEntity();
-				this.testAndEatPrefix('>');
-				break;
-			case NodeType.EndTag:
-				goto case NodeType.StartTag;
-			case NodeType.EmptyTag:
-				assert(false, "can't be found here, is done one step later");
-			case NodeType.CData: { 
-				node.input = this.eatUntil("]]>");
-				this.testAndEatPrefix("]]>");
-				break;
-			}
-			case NodeType.Text: { 
-				node.input = this.eatUntil('<');
-				break;
-			}
-			case NodeType.AttributeList:
-				goto case NodeType.StartTag;
-			case NodeType.ProcessingInstruction:
-				goto case NodeType.Prolog;
-			case NodeType.DocType: {
-				node.input = this.balancedEatBraces();
-				this.testAndEatPrefix('>');
-				break;
-			}
-			case NodeType.Element:
-				goto case NodeType.StartTag;
-			case NodeType.Comment: { 
-				node.input = this.eatUntil("-->");
-				this.testAndEatPrefix("-->");
-				break;
-			}
-			case NodeType.Notation:
-				goto case NodeType.StartTag;
-			case NodeType.Prolog: { 
-				node.input = this.eatUntil("?>");
-				if(node.input.indexOfX("xml ") == 0) {
-					node.nodeType = NodeType.Prolog;
-				}
-				this.testAndEatPrefix("?>");
-				break;
-			}
-		}
-
-		this.eatWhitespace();
-	}
-
-}
-
-unittest { // eatuntil
+/*unittest { // eatuntil
 	import std.algorithm.comparison : equal;
 	import std.format : format;
 	const auto strs = [
@@ -835,7 +633,10 @@ unittest { // eatuntil
 			}
 		}
 	}
-}
+}*/
+
+__EOF__
+
 
 unittest { // testAndEatPrefix
 	foreach(T ; TestInputTypes) {
