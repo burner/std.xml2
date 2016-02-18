@@ -10,6 +10,7 @@ import std.exception;
 import std.array;
 import std.conv;
 import std.format;
+import std.meta;
 import std.typecons;
 import std.range.primitives;
 import std.traits;
@@ -93,7 +94,7 @@ void reproduceNodeTypeString(T,O)(NodeType type, ref O output) @safe {
 }
 
 @safe unittest {
-	foreach(T; TypeTuple!(string,wstring,dstring)) {
+	foreach(T; AliasSeq!(string,wstring,dstring)) {
 		foreach(it; __traits(allMembers, NodeType)) {
 			NodeType node = __traits(getMember, NodeType, it);
 			auto app = appender!T();
@@ -607,7 +608,7 @@ unittest {
 	];
 
 	foreach(T; TestInputTypes) {
-		foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
+		foreach(P; AliasSeq!(TrackPosition.yes, TrackPosition.no)) {
 			foreach(it; strs) {
 				for(size_t i = 0; i < it.length; ++i) {
 					//logf("%u '%c' %s", i, it[i], T.stringof);
@@ -653,7 +654,7 @@ unittest { // testAndEatPrefix
 
 unittest { // eatWhitespace
 	foreach(T ; TestInputTypes) {
-		foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
+		foreach(P; AliasSeq!(TrackPosition.yes, TrackPosition.no)) {
 			auto input = makeTestInputTypes!T(" \t\n\r");
 			auto lexer = Lexer!(T,P)(input);
 			lexer.eatWhitespace();
@@ -675,7 +676,7 @@ unittest { // balancedEatUntil
 	];
 
 	foreach(T ; TestInputTypes) {
-		foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
+		foreach(P; AliasSeq!(TrackPosition.yes, TrackPosition.no)) {
 			foreach(testStrIt; testStrs) {
 				//logf("%s %s %s", T.stringof, P.stringof, testStrIt);
 				auto input = makeTestInputTypes!T(testStrIt);
@@ -749,9 +750,9 @@ cdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ">} ~
 "]>",
 	];
 	foreach(T ; TestInputTypes) {
-	//foreach(T ; TypeTuple!(CharInputRange!string)) {
+	//foreach(T ; AliasSeq!(CharInputRange!string)) {
 		//pragma(msg, T);
-		foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
+		foreach(P; AliasSeq!(TrackPosition.yes, TrackPosition.no)) {
 			foreach(testStrIt; testStrs) {
 				auto testStr = makeTestInputTypes!T(testStrIt);
 				auto lexer = Lexer!(T,P)(testStr);
@@ -780,7 +781,7 @@ unittest {
 
 	foreach(T ; TestInputTypes) {
 		//pragma(msg, T);
-		foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
+		foreach(P; AliasSeq!(TrackPosition.yes, TrackPosition.no)) {
 			foreach(testStrIt; testStrs) {
 				auto testStr = makeTestInputTypes!T(testStrIt);
 				auto lexer = Lexer!(T,P)(testStr);
@@ -812,7 +813,7 @@ unittest {
 	];	
 
 	foreach(T ; TestInputTypes) {
-		foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
+		foreach(P; AliasSeq!(TrackPosition.yes, TrackPosition.no)) {
 			foreach(testStrIt; testStrs) {
 				auto testStr = makeTestInputTypes!T(testStrIt);
 				auto lexer = Lexer!(T,P)(testStr);
@@ -903,7 +904,7 @@ unittest {
 		//log(name);
 
 		outer: foreach(T ; TestInputTypes) {
-			foreach(P; TypeTuple!(TrackPosition.yes, TrackPosition.no)) {
+			foreach(P; AliasSeq!(TrackPosition.yes, TrackPosition.no)) {
 				typeof(Lexer!(T,P).front) f;
 				try {
 					auto testStr = makeTestInputTypes!T(s);
@@ -914,7 +915,7 @@ unittest {
 					}
 					assert(lexer.input.empty);
 				} catch(UTFException e) {
-					//logf("%s %s %s %s", name, T.stringof, P, e.toString());
+					logf("%s %s %s %s", name, T.stringof, P, e.toString());
 					break outer;
 					//assert(false);
 				} catch(Throwable e) {

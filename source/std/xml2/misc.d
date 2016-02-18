@@ -193,11 +193,11 @@ unittest {
 	import std.xml2.testing : CharInputRange;
 	import std.algorithm.comparison : min, equal;
 	import std.array : front;
-	import std.typecons : TypeTuple;
+	import std.meta : AliasSeq;
 
 	auto str = "Hello world";
 
-	foreach(Cnt; TypeTuple!(1,2,3,4,5,6,7,8,9,10,11,12,13,1024)) {
+	foreach(Cnt; AliasSeq!(1,2,3,4,5,6,7,8,9,10,11,12,13,1024)) {
 		auto input = CharInputRange!(string)("Hello world");
 		auto forward = ForwardRangeInput!(typeof(input), Cnt)(input);
 		auto forward2 = ForwardRangeInput!(typeof(input), Cnt)(input);

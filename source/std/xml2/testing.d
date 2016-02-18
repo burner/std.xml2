@@ -2,26 +2,26 @@ module std.xml2.testing;
 
 import std.array : empty, front, popFront, appender, Appender;
 import std.conv : to;
-import std.typecons : TypeTuple;
+import std.meta;
 import std.range.primitives : ElementType, ElementEncodingType;
 import std.random : Random, uniform;
 import std.experimental.logger;
 import std.string : indexOf;
 
-alias TestInputTypes = TypeTuple!(
+alias TestInputTypes = AliasSeq!(
 	string, wstring, dstring,
 	char[], wchar[], dchar[],
 	//immutable(ubyte)[], immutable(ushort)[], immutable(uint)[],
 	CharInputRange!string, CharInputRange!wstring, CharInputRange!dstring
 );
 
-alias TestInputArray = TypeTuple!(
+alias TestInputArray = AliasSeq!(
 	string, wstring, dstring,
 	char[], wchar[], dchar[]
 	//immutable(ubyte)[], immutable(ushort)[], immutable(uint)[]
 );
 
-alias TestInputRanges = TypeTuple!(
+alias TestInputRanges = AliasSeq!(
 	CharInputRange!string, CharInputRange!wstring, CharInputRange!dstring
 );
 
@@ -81,7 +81,7 @@ pure @safe bool hasState(XmlGen o) {
 		}	
 	}
 
-	foreach(T; TypeTuple!(XmlGenStar,XmlGenOr)) {
+	foreach(T; AliasSeq!(XmlGenStar,XmlGenOr)) {
 		auto b = cast(T)o;
 		if(b !is null) {
 			return true;
