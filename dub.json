@@ -6,6 +6,7 @@
 	"authors": ["Robert burner Schadek"],
 	"license": "BSD",
 	"targetType" : "executable",
+	"targetPath": "bin",
 	"importPaths": [".", "source"],
 	"sourcePaths": ["source"],
 	"dependencies": {
@@ -13,3 +14,4 @@
 	},
 	"compiler" : "dmd"
 }
+
