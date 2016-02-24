@@ -158,6 +158,7 @@ struct Slicer(T) {
 		this.input = input;
 		this.curPos = 0;
 		this.buildNext = true;
+		this.eatWhitespace();
 	}
 
 	private void eatWhitespace() {
@@ -653,20 +654,7 @@ unittest {
 	}
 }
 
-__EOF__
-
-unittest { // eatWhitespace
-	foreach(T ; TestInputTypes) {
-		foreach(P; AliasSeq!(TrackPosition.yes, TrackPosition.no)) {
-			auto input = makeTestInputTypes!T(" \t\n\r");
-			auto lexer = Lexer!(T,P)(input);
-			lexer.eatWhitespace();
-			assert(lexer.empty);
-		}
-	}
-}
-
-unittest { // balancedEatUntil
+unittest { 
 	const auto testStrs = [
 		q{<!DOCTYPE foo [
 		  <!ELEMENT foo (root*)>
@@ -678,20 +666,13 @@ unittest { // balancedEatUntil
 		  <!ATTLIST root xml:lang CDATA #IMPLIED> ]>},
 	];
 
-	foreach(T ; TestInputTypes) {
-		foreach(P; AliasSeq!(TrackPosition.yes, TrackPosition.no)) {
-			foreach(testStrIt; testStrs) {
-				//logf("%s %s %s", T.stringof, P.stringof, testStrIt);
-				auto input = makeTestInputTypes!T(testStrIt);
-				auto lexer = Lexer!(T,P)(input);
-
-				assert(lexer.testAndEatPrefix('<'));
-				assert(!lexer.input.empty);
-				auto data = lexer.balancedEatBraces();
-				assert(!lexer.input.empty);
-				assert(lexer.testAndEatPrefix('>'));
-				assert(lexer.empty);
-			}
+	foreach(T ; TestInputArray) {
+		foreach(testStrIt; testStrs) {
+			auto input = makeTestInputTypes!T(testStrIt);
+			auto lexer = Lexer!(T,Slicer!T)(input);
+			auto node = lexer.front;
+			lexer.popFront();
+			assert(lexer.empty);
 		}
 	}
 }
@@ -705,8 +686,8 @@ q{<!DOCTYPE doc
 %pe;<!---->%pe;
 ]>},
 "<!DOCTYPE []>",
-"<!DT [ <!EL >]>",
-"<!DT [ <!EL > <!-- -->]>",
+"<!DOCTYPE [ <!EL >]>",
+"<!DOCTYPE [ <!EL > <!-- -->]>",
 q{
 <!DOCTYPE doc
 [
@@ -752,15 +733,20 @@ cdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ">} ~
 "<!NOTATION not2 PUBLIC '0123456789-()+,./:=?;!*#@$_%'>" ~
 "]>",
 	];
-	foreach(T ; TestInputTypes) {
+	foreach(T ; TestInputArray) {
 	//foreach(T ; AliasSeq!(CharInputRange!string)) {
 		//pragma(msg, T);
-		foreach(P; AliasSeq!(TrackPosition.yes, TrackPosition.no)) {
+		//foreach(P; AliasSeq!(TrackPosition.yes, TrackPosition.no)) {
 			foreach(testStrIt; testStrs) {
 				auto testStr = makeTestInputTypes!T(testStrIt);
-				auto lexer = Lexer!(T,P)(testStr);
+				auto lexer = Lexer!(T,Slicer!T)(testStr);
+				assert(!lexer.empty);
+				auto node = lexer.front;
+				lexer.popFront();
+				assert(lexer.empty);
 
-				assert(lexer.testAndEatPrefix('<'));
+
+				/*assert(lexer.testAndEatPrefix('<'));
 				assert(!lexer.input.empty);
 				auto data = lexer.balancedEatBraces();
 				assert(!lexer.input.empty, toStringX(data) ~ " " ~
@@ -769,10 +755,13 @@ cdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ">} ~
 				lexer.eatWhitespace();
 				assert(lexer.empty, T.stringof ~ " \"" ~ 
 					toStringX(lexer.input) ~ "\"");
+				*/
 			}
-		}
+		//}
 	}
 }
+
+__EOF__
 
 unittest {
 	import std.conv : to;
