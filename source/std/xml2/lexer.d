@@ -761,8 +761,6 @@ cdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ">} ~
 	}
 }
 
-__EOF__
-
 unittest {
 	import std.conv : to;
 
@@ -771,12 +769,12 @@ unittest {
 		"<xml foo=\"bar\"> Some text that should result in a textnode</xml>",
 	];	
 
-	foreach(T ; TestInputTypes) {
+	foreach(T ; TestInputArray) {
 		//pragma(msg, T);
-		foreach(P; AliasSeq!(TrackPosition.yes, TrackPosition.no)) {
+		//foreach(P; AliasSeq!(TrackPosition.yes, TrackPosition.no)) {
 			foreach(testStrIt; testStrs) {
 				auto testStr = makeTestInputTypes!T(testStrIt);
-				auto lexer = Lexer!(T,P)(testStr);
+				auto lexer = Lexer!(T,Slicer!T)(testStr);
 
 				try {
 					assert(!lexer.empty);
@@ -784,16 +782,17 @@ unittest {
 					lexer.popFront();
 					assert(!lexer.empty);
 					auto text = lexer.front;
+					assert(text.nodeType == NodeType.Text);
 					lexer.popFront();
 					assert(!lexer.empty);
 					auto end = lexer.front;
 					lexer.popFront();
-					assert(lexer.empty, to!string(lexer.input));
+					assert(lexer.empty);
 				} catch(Exception e) {
 					logf("%s %s", e.toString(), T.stringof);
 				}
 			}
-		}
+		//}
 	}
 }
 
@@ -804,15 +803,15 @@ unittest {
 		"<A/>"
 	];	
 
-	foreach(T ; TestInputTypes) {
-		foreach(P; AliasSeq!(TrackPosition.yes, TrackPosition.no)) {
+	foreach(T ; TestInputArray) {
+		//foreach(P; AliasSeq!(TrackPosition.yes, TrackPosition.no)) {
 			foreach(testStrIt; testStrs) {
 				auto testStr = makeTestInputTypes!T(testStrIt);
-				auto lexer = Lexer!(T,P)(testStr);
+				auto lexer = Lexer!(T,Slicer!T)(testStr);
 				assert(!lexer.empty);
 				auto f = lexer.front;
 			}
-		}
+		//}
 	}
 }
 
@@ -820,14 +819,14 @@ unittest {
 	import std.xml2.bom;
 	auto s = readTextWithBOM("tests/xmltest/valid/sa/out/050.xml");
 	//log(s);
-	auto lexer = Lexer!(string,TrackPosition.yes)(s);
+	auto lexer = Lexer!(string,Slicer!string)(s);
 	while(!lexer.empty) {
 		auto f = lexer.front;
 		//log(f);
 		lexer.popFront();
 		//log(lexer.input);
 	}
-	assert(lexer.input.empty);
+	assert(lexer.empty);
 }
 
 unittest {
@@ -893,32 +892,33 @@ unittest {
 			continue;
 		}
 
-		//log(name);
+		log(name);
 
-		outer: foreach(T ; TestInputTypes) {
-			foreach(P; AliasSeq!(TrackPosition.yes, TrackPosition.no)) {
-				typeof(Lexer!(T,P).front) f;
+		outer: foreach(T ; TestInputArray) {
+			//foreach(P; AliasSeq!(TrackPosition.yes, TrackPosition.no)) {
+				//typeof(Lexer!(T,Slicer!T).front) f;
 				try {
 					auto testStr = makeTestInputTypes!T(s);
-					auto lexer = Lexer!(T,P)(testStr);
+					auto lexer = Lexer!(T,Slicer!T)(testStr);
 					while(!lexer.empty) {
-						f = lexer.front;
+						auto f = lexer.front;
 						lexer.popFront();
 					}
-					assert(lexer.input.empty);
+					assert(lexer.empty);
 				} catch(UTFException e) {
-					logf("%s %s %s %s", name, T.stringof, P, e.toString());
+					logf("%s %s %s", name, T.stringof, e.toString());
 					break outer;
 					//assert(false);
 				} catch(Throwable e) {
-					logf("%s %s %s %s", name, T.stringof, P, e.toString());
+					logf("%s %s %s", name, T.stringof, e.toString());
 					break outer;
 					//assert(false);
 					//assert(false, e.toString());
 				}
-			}
+			//}
 		}
 	}
 
 	logf("%s of %s could be read", cntW, cnt);
 }
+
