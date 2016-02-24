@@ -838,12 +838,11 @@ unittest {
 	int cnt = 0;
 	int cntW = 0;
 	foreach(string name; dirEntries("tests", SpanMode.depth)
-			.filter!(a => extension(a) == ".xml" )
-				/*&& a.name.indexOf("not") == -1
-				&& a.name.indexOf("invalid") == -1
+			.filter!(a => extension(a) == ".xml"
+				&& a.name.indexOf("not") == -1
+				&& a.name.indexOf("invalid") == -1) /*
 				&& a.name.indexOf("fail") == -1 
 				&& a.name.indexOf("japa") == -1
-				&& a.name.indexOf("valid/sa/out/050.xml") == -1
 				&& a.name.indexOf("valid/sa/out/049.xml") == -1
 				&& a.name.indexOf("valid/sa/out/051.xml") == -1
 				&& a.name.indexOf("valid/sa/out/089.xml") == -1
