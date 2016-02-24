@@ -636,21 +636,21 @@ unittest {
 	}
 }*/
 
-__EOF__
 
 
-unittest { // testAndEatPrefix
-	foreach(T ; TestInputTypes) {
+unittest {
+	foreach(T ; TestInputArray) {
 		auto input = makeTestInputTypes!T("<xml></xml>");
-		auto lexer = Lexer!T(input);
-		auto lexer2 = Lexer!T(input);
-		assert(lexer.testAndEatPrefix("<xml"), T.stringof ~ " (" ~ 
-			to!string(lexer.input) ~ ")");
-		assert(lexer2.testAndEatPrefix('<'));
-		assert(!lexer2.testAndEatPrefix('>'));
-		assert(!lexer.testAndEatPrefix("</xml"));
+		auto lexer = Lexer!(T,Slicer!T)(input);
+		assert(!lexer.empty);
+		lexer.popFront();
+		assert(!lexer.empty);
+		lexer.popFront();
+		assert(lexer.empty);
 	}
 }
+
+__EOF__
 
 unittest { // eatWhitespace
 	foreach(T ; TestInputTypes) {

@@ -2,7 +2,7 @@
 	"name": "xml2",
 	"description": "Phobos xml replacement std.xml2",
 	"homepage": "",
-	"copyright": "Copyright © 2015, burner",
+	"copyright": "Copyright © 2015,2016, burner",
 	"authors": ["Robert burner Schadek"],
 	"license": "BSD",
 	"targetType" : "executable",
@@ -10,7 +10,7 @@
 	"importPaths": [".", "source"],
 	"sourcePaths": ["source"],
 	"dependencies": {
-		"kxml": ">=1.0.0"
+		"std_benchmark": ">=0.0.8"
 	},
 	"compiler" : "dmd"
 }
