@@ -334,6 +334,9 @@ struct Slicer(T) {
 	}
 
 	void popFront() {
+		if(this.buildNext) {
+			this.front();
+		}
 		this.buildNext = true;
 	}
 
